@@ -1,1 +1,5 @@
-Docs/PLAN.md
+Misc/
+__pycache__/
+.venv/
+.env
+*.db

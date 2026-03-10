@@ -4,6 +4,7 @@ from app.database import Base, engine
 from sqlalchemy import text
 import app.models  # imported so sqlalchemy registers them before create_all()
 
+from app.auth import router as auth_router
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -11,6 +12,8 @@ app = FastAPI(
     version=settings.APP_VERSION,
     debug=settings.DEBUG,
 )
+
+app.include_router(auth_router)
 
 # create db tables
 Base.metadata.create_all(bind=engine)

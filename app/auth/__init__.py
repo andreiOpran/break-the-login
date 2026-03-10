@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from hashlib import md5
-from jose import jwt
+from jose import jwt, JWTError
 from datetime import datetime, timezone, timedelta
 
 from app.models import User, UserRole
@@ -11,6 +12,9 @@ from app.config import settings
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+bearer_scheme = HTTPBearer()
+
 
 # "Depends" calls get_db() (getting what get_db() yields)
 # so it opens and closes a session during the request
@@ -52,6 +56,25 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
         "exp": datetime.now(timezone.utc) + timedelta(hours=settings.ACCESS_TOKEN_EXPIRE_HOURS),
     }
     # strucure of jwt: header.payload.signature
-    # (header is the algo used + "jwt"; payload points to who owns it;signature is made using SECRET_KEY)
+    # (header is the algo used + "jwt"; payload points to who owns it; signature is made using SECRET_KEY)
     token = jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return TokenResponse(access_token=token)
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme), 
+    db: Session = Depends(get_db)
+) -> User:
+    token = credentials.credentials  # raw jwt string
+    
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        user_id: str | None = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    user=db.get(User, int(user_id))
+    if user is None:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user

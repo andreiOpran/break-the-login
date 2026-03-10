@@ -16,6 +16,27 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 bearer_scheme = HTTPBearer()
 
 
+# dependency that reads Bearer token from header, verifies it, then returns matching user
+# if there is any mismatch, the request recieves 401 before the route runs
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme), 
+    db: Session = Depends(get_db)
+) -> User:
+    token = credentials.credentials  # raw jwt string
+    
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        user_id: str | None = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    user=db.get(User, int(user_id))
+    if user is None:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
+
 # "Depends" calls get_db() (getting what get_db() yields)
 # so it opens and closes a session during the request
 @router.post("/register", status_code=201)
@@ -60,21 +81,9 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     token = jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return TokenResponse(access_token=token)
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme), 
-    db: Session = Depends(get_db)
-) -> User:
-    token = credentials.credentials  # raw jwt string
-    
-    try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        user_id: str | None = payload.get("sub")
-        if user_id is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    
-    user=db.get(User, int(user_id))
-    if user is None:
-        raise HTTPException(status_code=401, detail="User not found")
-    return user
+# VULNERABILITY 4.5 - token remains available after log out,
+# until its expiry, and can still be used if an attacker captures it
+@router.post("/logout")
+def logout(user: User = Depends(get_current_user)):
+    return {"message": "Log out successful"}
+

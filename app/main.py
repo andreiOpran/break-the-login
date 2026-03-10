@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from app.config import settings
 from app.database import Base, engine
 from sqlalchemy import text
-import app.models  # imported sqlalchemy registers them before create_all()
+import app.models  # imported so sqlalchemy registers them before create_all()
 
 
 app = FastAPI(
@@ -12,7 +12,7 @@ app = FastAPI(
     debug=settings.DEBUG,
 )
 
-# create all db tables
+# create db tables
 Base.metadata.create_all(bind=engine)
 
 @app.get("/health")

@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = "sqlite:///./authx.db"
 
-    SECRET_KEY: str = "this-is-retrieved-from-env"
+    SECRET_KEY: str = "this-should-be-retrieved-from-env"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
 

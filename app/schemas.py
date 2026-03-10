@@ -32,6 +32,7 @@ class UserOut(BaseModel):
     created_at: datetime
     locked: bool
 
+    # set pydantic to read objects (sqlalchemy return), not just plain dicts
     model_config = {"from_attributes": True}
 
 # TICKETS

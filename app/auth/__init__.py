@@ -10,8 +10,9 @@ from app.schemas import (
     RegisterRequest, TokenResponse, LoginRequest, 
     ForgotPasswordRequest, ResetPasswordRequest
 )
-from app.database import get_db
+from app.database import get_db, col_id
 from app.config import settings
+from app.audit import log
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -46,6 +47,7 @@ def get_current_user(
 def register(request: RegisterRequest, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.email == request.email).first()
     if existing:
+        log(db, action="REGISTER_FAILED", resource="auth")
         raise HTTPException(status_code=400, detail="There is already an account with this email")
     
     user = User(
@@ -58,6 +60,7 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)  # so that user.id can be populated from the db
+    log(db, action="REGISTER", resource="auth", user_id=col_id(user.id))
     return {"message": "User registered successfully", "id": user.id}
 
 @router.post("/login", response_model=TokenResponse)
@@ -67,10 +70,12 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     
     # VULNERABILITY 4.4 - USER ENUMERATION, DIFFERENT MESSAGES FOR INVALID USER/PASS
     if not user:
+        log(db, action="LOGIN_FAILED", resource="auth")
         raise HTTPException(status_code=401, detail="User not found")
     
     stored_hash: str = str(user.password_hash) # aux var to avoid type check error
     if stored_hash != md5(request.password.encode()).hexdigest():
+        log(db, action="LOGIN_FAILED", resource="auth", user_id=col_id(user.id))
         raise HTTPException(status_code=401, detail="Wrong password")
     
     # VULNERABILITY 4.5 - weak secret, 1w expiry, no rotation
@@ -83,12 +88,14 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     # strucure of jwt: header.payload.signature
     # (header is the algo used + "jwt"; payload points to who owns it; signature is made using SECRET_KEY)
     token = jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    log(db, action="LOGIN", resource="auth", user_id=col_id(user.id))
     return TokenResponse(access_token=token)
 
 # VULNERABILITY 4.5 - token remains available after log out,
 # until its expiry, and can still be used if an attacker captures it
 @router.post("/logout")
-def logout(_: User = Depends(get_current_user)):
+def logout(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    log(db, action="LOGOUT", resource="auth", user_id=col_id(current_user.id))
     return {"message": "Log out successful"}
 
 # VULNERABILITY 4.6 - INSECURE PASSWORD RESET 
@@ -98,6 +105,7 @@ def logout(_: User = Depends(get_current_user)):
 def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == request.email).first()
     if not user:
+        log(db, action="FORGOT_PASSWORD_FAILED", resource="auth")
         raise HTTPException(status_code=404, detail="Email not found")
 
     # if the attacker knows the email, they can recreate the token
@@ -106,6 +114,7 @@ def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db
     reset_token = PasswordResetToken(user_id=user.id, token=token)
     db.add(reset_token)
     db.commit()
+    log(db, action="FORGOT_PASSWORD", resource="auth", user_id=col_id(user.id))
     
     return {"reset_token": token}
 
@@ -116,6 +125,7 @@ def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db))
     ).first()
     
     if not reset_token:
+        log(db, action="RESET_PASSWORD_FAILED", resource="auth")
         raise HTTPException(status_code=400, detail="Invalid token")
     
     user = db.get(User, reset_token.user_id)
@@ -124,5 +134,5 @@ def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db))
     
     setattr(user, "password_hash", md5(request.new_password.encode()).hexdigest())
     db.commit()
-    
+    log(db, action="RESET_PASSWORD", resource="auth", user_id=col_id(reset_token.user_id))
     return {"message": "Pasword reseted successfully"}

@@ -3,8 +3,9 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.schemas import TicketOut, TicketCreate, TicketUpdate
-from app.database import get_db
+from app.database import get_db, col_id
 from app.models import User, Ticket
+from app.audit import log
 
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
@@ -24,6 +25,7 @@ def create_ticket(
     db.add(ticket)
     db.commit()
     db.refresh(ticket)  # so that ticket.id can be populated from the db
+    log(db, action="CREATE_TICKET", resource="ticket", user_id=col_id(current_user.id), resource_id=str(ticket.id))
     return ticket
 
 @router.get("/", response_model=list[TicketOut])
@@ -50,7 +52,7 @@ def update_ticket(
     ticket_id: int,
     request: TicketUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user) # auth required
+    current_user: User = Depends(get_current_user) # auth required
 ):
     ticket = db.get(Ticket, ticket_id)
     if ticket is None:
@@ -61,13 +63,14 @@ def update_ticket(
         setattr(ticket, field, value)
     db.commit()
     db.refresh(ticket) # so that ticket.updated_at can be updated in the db
+    log(db, action="UPDATE_TICKET", resource="ticket", user_id=col_id(current_user.id), resource_id=str(ticket.id))
     return ticket
 
 @router.delete("/{ticket_id}", status_code=204)
 def delete_ticket(
     ticket_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user) # auth required
+    current_user: User = Depends(get_current_user) # auth required
 ):
     # VULNERABILITY IDOR: no ownership check, ticket can be deleted by anyone
     ticket = db.get(Ticket, ticket_id)
@@ -76,3 +79,4 @@ def delete_ticket(
     
     db.delete(ticket)
     db.commit()
+    log(db, action="DELETE_TICKET", resource="ticket", user_id=col_id(current_user.id), resource_id=str(ticket_id))

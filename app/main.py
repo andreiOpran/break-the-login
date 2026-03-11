@@ -6,6 +6,7 @@ import app.models  # imported so sqlalchemy registers them before create_all()
 
 from app.auth import router as auth_router
 from app.tickets import router as tickets_router
+from app.audit import router as audit_router
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -16,6 +17,7 @@ app = FastAPI(
 
 app.include_router(auth_router)
 app.include_router(tickets_router)
+app.include_router(audit_router)
 
 # create db tables
 Base.metadata.create_all(bind=engine)

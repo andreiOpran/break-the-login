@@ -21,3 +21,7 @@ def get_db():
         yield db 
     finally:
         db.close()
+        
+# silencer helper for int(Column[int]) pylance incompatibility errors
+def col_id(col: object) -> int:
+    return int(col) # type: ignore[arg-type]

@@ -5,8 +5,11 @@ from hashlib import md5
 from jose import jwt, JWTError
 from datetime import datetime, timezone, timedelta
 
-from app.models import User, UserRole
-from app.schemas import RegisterRequest, TokenResponse, LoginRequest
+from app.models import User, UserRole, PasswordResetToken
+from app.schemas import (
+    RegisterRequest, TokenResponse, LoginRequest, 
+    ForgotPasswordRequest, ResetPasswordRequest
+)
 from app.database import get_db
 from app.config import settings
 
@@ -87,3 +90,38 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
 def logout(user: User = Depends(get_current_user)):
     return {"message": "Log out successful"}
 
+# VULNERABILITY 4.6 - INSECURE PASSWORD RESET 
+# (TOKEN IS MD5 ENCRYPTION OF THE EMAIL, MAKING IT PREDICTABLE;
+# TOKEN IS ALWAYS THE SAME AND CAN BE REUSED; TOKEN DOES NOT HAVE EXPIRY)
+@router.post("/forgot-password")
+def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == request.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    # if the attacker knows the email, they can recreate the token
+    token = md5(request.email.encode()).hexdigest()
+    
+    reset_token = PasswordResetToken(user_id=user.id, token=token)
+    db.add(reset_token)
+    db.commit()
+    
+    return {"reset_token": token}
+
+@router.post("/reset-password")
+def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
+    reset_token = db.query(PasswordResetToken).filter(
+        PasswordResetToken.token == request.token
+    ).first()
+    
+    if not reset_token:
+        raise HTTPException(status_code=400, detail="Invalid token")
+    
+    user = db.get(User, reset_token.user_id)
+    if user is None:
+        raise HTTPException(status_code=400, detail="User not found")
+    
+    setattr(user, "password_hash", md5(request.new_password.encode()).hexdigest())
+    db.commit()
+    
+    return {"message": "Pasword reseted successfully"}

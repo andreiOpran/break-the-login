@@ -51,7 +51,7 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
     user = User(
         email=request.email,
         # VULNERABILITY 4.1 - WEAK PASSWORD POLICY (no length/complexity check)
-        # VULNERABILITY 4.2 - INSECURE PASSWORD STORAGE (MD5, NO SALT)
+        # VULNERABILITY 4.2 - INSECURE PASSWORD STORAGE (MD5, no salt)
         password_hash = md5(request.password.encode()).hexdigest(),
         role=UserRole.ANALYST
     )
@@ -62,6 +62,7 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=TokenResponse)
 def login(request: LoginRequest, db: Session = Depends(get_db)):
+    # VULNERABILITY 4.3 - NO RATE LIMITING (unlimited login attempts)
     user = db.query(User).filter(User.email == request.email).first()
     
     # VULNERABILITY 4.4 - USER ENUMERATION, DIFFERENT MESSAGES FOR INVALID USER/PASS
@@ -91,8 +92,8 @@ def logout(user: User = Depends(get_current_user)):
     return {"message": "Log out successful"}
 
 # VULNERABILITY 4.6 - INSECURE PASSWORD RESET 
-# (TOKEN IS MD5 ENCRYPTION OF THE EMAIL, MAKING IT PREDICTABLE;
-# TOKEN IS ALWAYS THE SAME AND CAN BE REUSED; TOKEN DOES NOT HAVE EXPIRY)
+# (token is md5 encryption of the email, making it predictable;
+# token is always the same and can be reused; token does not have expiry)
 @router.post("/forgot-password")
 def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == request.email).first()

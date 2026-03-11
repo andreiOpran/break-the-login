@@ -88,7 +88,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
 # VULNERABILITY 4.5 - token remains available after log out,
 # until its expiry, and can still be used if an attacker captures it
 @router.post("/logout")
-def logout(user: User = Depends(get_current_user)):
+def logout(_: User = Depends(get_current_user)):
     return {"message": "Log out successful"}
 
 # VULNERABILITY 4.6 - INSECURE PASSWORD RESET 

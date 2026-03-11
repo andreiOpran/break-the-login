@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from hashlib import md5
-from jose import jwt, JWTError
+from jose import jwt
 from datetime import datetime, timezone, timedelta
 
 from app.models import User, UserRole, PasswordResetToken
@@ -12,34 +11,11 @@ from app.schemas import (
 )
 from app.database import get_db, col_id
 from app.config import settings
+from app.dependencies import get_current_user
 from app.audit import log
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-bearer_scheme = HTTPBearer()
-
-
-# dependency that reads Bearer token from header, verifies it, then returns matching user
-# if there is any mismatch, the request recieves 401 before the route runs
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme), 
-    db: Session = Depends(get_db)
-) -> User:
-    token = credentials.credentials  # raw jwt string
-    
-    try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        user_id: str | None = payload.get("sub")
-        if user_id is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    
-    user=db.get(User, int(user_id))
-    if user is None:
-        raise HTTPException(status_code=401, detail="User not found")
-    return user
 
 # "Depends" calls get_db() (getting what get_db() yields)
 # so it opens and closes a session during the request

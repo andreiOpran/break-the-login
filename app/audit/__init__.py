@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.models import AuditLog, User, UserRole
 from app.schemas import AuditLogOut
 from app.database import get_db
-from app.auth import get_current_user
+from app.dependencies import get_current_user
 
 
 router = APIRouter(prefix="/audit", tags=["audit"])

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user
@@ -12,20 +12,28 @@ router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 @router.post("/", response_model=TicketOut, status_code=201)
 def create_ticket(
-    request: TicketCreate,
+    body: TicketCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     ticket = Ticket(
-        title=request.title,
-        description=request.description,
-        severity=request.severity,
+        title=body.title,
+        description=body.description,
+        severity=body.severity,
         owner_id=current_user.id,
     )
     db.add(ticket)
     db.commit()
     db.refresh(ticket)  # so that ticket.id can be populated from the db
-    log(db, action="CREATE_TICKET", resource="ticket", user_id=col_id(current_user.id), resource_id=str(ticket.id))
+    log(
+        db=db,
+        action="CREATE_TICKET",
+        resource="ticket",
+        user_id=col_id(current_user.id),
+        resource_id=str(ticket.id),
+        ip_address=request.client.host if request.client else None
+    )
     return ticket
 
 @router.get("/", response_model=list[TicketOut])
@@ -37,20 +45,30 @@ def read_tickets(
 @router.get("/{ticket_id}", response_model=TicketOut)
 def get_ticket(
     ticket_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user) # auth required
+    current_user: User = Depends(get_current_user) # auth required
 ):
     # VULNERABILITY IDOR: no ownership check, ticket can be retrieved by anyone
     ticket = db.get(Ticket, ticket_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
-    
+
+    log(
+        db=db,
+        action="GET_TICKET",
+        resource="ticket",
+        user_id=col_id(current_user.id),
+        resource_id=str(ticket_id),
+        ip_address=request.client.host if request.client else None
+    )
     return ticket
 
 @router.patch("/{ticket_id}", response_model=TicketOut)
 def update_ticket(
     ticket_id: int,
-    request: TicketUpdate,
+    body: TicketUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user) # auth required
 ):
@@ -59,16 +77,24 @@ def update_ticket(
         raise HTTPException(status_code=404, detail="Ticket not found")
     
     # VULNERABILITY IDOR: no ownership check, ticket can be updated by anyone
-    for field, value in request.model_dump(exclude_unset=True).items():
+    for field, value in body.model_dump(exclude_unset=True).items():
         setattr(ticket, field, value)
     db.commit()
     db.refresh(ticket) # so that ticket.updated_at can be updated in the db
-    log(db, action="UPDATE_TICKET", resource="ticket", user_id=col_id(current_user.id), resource_id=str(ticket.id))
+    log(
+        db=db,
+        action="UPDATE_TICKET",
+        resource="ticket",
+        user_id=col_id(current_user.id),
+        resource_id=str(ticket.id),
+        ip_address=request.client.host if request.client else None
+    )
     return ticket
 
 @router.delete("/{ticket_id}", status_code=204)
 def delete_ticket(
     ticket_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user) # auth required
 ):
@@ -79,4 +105,11 @@ def delete_ticket(
     
     db.delete(ticket)
     db.commit()
-    log(db, action="DELETE_TICKET", resource="ticket", user_id=col_id(current_user.id), resource_id=str(ticket_id))
+    log(
+        db=db,
+        action="DELETE_TICKET",
+        resource="ticket",
+        user_id=col_id(current_user.id),
+        resource_id=str(ticket_id),
+        ip_address=request.client.host if request.client else None
+    )

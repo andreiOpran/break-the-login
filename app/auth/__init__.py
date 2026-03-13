@@ -21,6 +21,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # so it opens and closes a session during the request
 @router.post("/register", status_code=201)
 def register(body: RegisterRequest, request: Request, db: Session = Depends(get_db)):
+    # VULNERABILITY 4.4 - USER ENUMERATION, DIFFERENT MESSAGES FOR EXISTING/NON-EXISTING EMAIL
     existing = db.query(User).filter(User.email == body.email).first()
     if existing:
         log(
@@ -135,15 +136,30 @@ def forgot_password(
     # if the attacker knows the email, they can recreate the token
     token = md5(body.email.encode()).hexdigest()
     
-    reset_token = PasswordResetToken(user_id=user.id, token=token)
-    db.add(reset_token)
-    db.commit()
-    log(
-        db=db,
-        action="FORGOT_PASSWORD",
-        resource="auth", user_id=col_id(user.id),
-        ip_address=request.client.host if request.client else None
-    )
+    existing_token = db.query(PasswordResetToken).filter(
+        PasswordResetToken.token == token,
+        PasswordResetToken.user_id == user.id
+    ).first()
+    
+    if not existing_token:
+        # only add a token if we did not found any in the db,
+        # to avoid unique constraint error
+        reset_token = PasswordResetToken(user_id=user.id, token=token)
+        db.add(reset_token)
+        db.commit()
+        log(
+            db=db,
+            action="FORGOT_PASSWORD",
+            resource="auth", user_id=col_id(user.id),
+            ip_address=request.client.host if request.client else None
+        )
+    else:
+        log(
+            db=db,
+            action="FORGOT_PASSWORD",
+            resource="auth", user_id=col_id(user.id),
+            ip_address=request.client.host if request.client else None
+        )
     
     return {"reset_token": token}
 

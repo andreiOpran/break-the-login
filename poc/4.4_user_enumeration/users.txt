@@ -1,0 +1,10 @@
+4.4@example.com
+user@example.com
+admin@example.com
+test@example.com
+fake@email.com
+john.doe@example.com
+jane.doe@example.com
+manager@example.com
+analyst@example.com
+doesnotexist@example.com

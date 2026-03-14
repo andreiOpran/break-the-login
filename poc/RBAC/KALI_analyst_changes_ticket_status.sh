@@ -1,6 +1,9 @@
 #!/bin/bash
 
-TARGET_IP="http://192.168.200.1:8082"
+# Source config from parent directory
+source $(dirname "$0")/../config.sh
+
+# TARGET_IP loaded from config.sh
 SUFFIX=$RANDOM
 ANALYST_EMAIL="RBAC_analyst_${SUFFIX}@example.com"
 PASSWORD="password123"

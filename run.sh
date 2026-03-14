@@ -38,12 +38,23 @@ else
     echo "Fast mode enabled: Skipping firewall configuration."
 fi
 
-# 2. dynamically find the bridge IP
+# 2. dynamically find the bridge IP and write it to the poc config file
 HOST_IP=$(ip -4 -br addr show "$INTERFACE" 2>/dev/null | awk '{print $3}' | cut -d/ -f1)
 
 if [ -z "$HOST_IP" ]; then
     echo "Error: Could not find IP for $INTERFACE. Falling back to 127.0.0.1"
     HOST_IP="127.0.0.1"
+fi
+
+POC_CONFIG_FILE="./poc/config.sh"
+if [ -f "$POC_CONFIG_FILE" ]; then
+    echo "Updating $POC_CONFIG_FILE with TARGET_IP http://$HOST_IP:$PORT"
+    # use sed to replace the line starting with TARGET_IP=
+    # we use | as delimiter to avoid issues with slashes in http://
+    sed -i "s|^TARGET_IP=.*|TARGET_IP=\"http://$HOST_IP:$PORT\"|" "$POC_CONFIG_FILE"
+else
+    echo "$POC_CONFIG_FILE not found. Creating it."
+    echo -e "#!/bin/bash\n\nTARGET_IP=\"http://$HOST_IP:$PORT\"" > "$POC_CONFIG_FILE"
 fi
 
 # 3. handle venv 

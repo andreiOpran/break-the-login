@@ -1,13 +1,30 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from app.models import TicketSeverity, TicketStatus, UserRole
-
+from re import search
 
 # AUTHENTICATION
+def validate_password_complexity(password: str) -> str:
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters long")
+    if not search(r"[A-Z]", password):
+        raise ValueError("Password must contain at least one uppercase letter")
+    if not search(r"[a-z]", password):
+        raise ValueError("Password must contain at least one lowercase letter")
+    if not search(r"\d", password):
+        raise ValueError("Password must contain at least one digit")
+    if not search(r"[!@#$%^&*(),.?\":{}|<>]", password):
+        raise ValueError("Password must contain at least one special character")
+    return password
+
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
+
+    @field_validator("password")
+    def validate_password(cls, v):
+        return validate_password_complexity(v)
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -23,6 +40,10 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
+
+    @field_validator("new_password")
+    def validate_password(cls, v):
+        return validate_password_complexity(v)
 
 # USER
 class UserOut(BaseModel):

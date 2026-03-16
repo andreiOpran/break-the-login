@@ -34,7 +34,6 @@ def register(body: RegisterRequest, request: Request, db: Session = Depends(get_
     
     user = User(
         email=body.email,
-        # VULNERABILITY 4.1 - WEAK PASSWORD POLICY (no length/complexity check)
         # VULNERABILITY 4.2 - INSECURE PASSWORD STORAGE (MD5, no salt)
         password_hash = md5(body.password.encode()).hexdigest(),
         role=UserRole.ANALYST

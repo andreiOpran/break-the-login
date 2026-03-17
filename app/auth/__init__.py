@@ -67,7 +67,14 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="User not found")
     
     stored_hash: str = str(user.password_hash) # aux var to avoid type check error
-    if not password_context.verify(body.password, stored_hash):
+    # verification is done in a try block to avoid crashing the app if we try to 
+    # verify an old md5 token instead of the new bcrypt token
+    try:
+        is_valid = password_context.verify(body.password, stored_hash)
+    except Exception:
+        is_valid = False
+        
+    if not is_valid:
         log(
             db=db,
             action="LOGIN_FAILED",

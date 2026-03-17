@@ -5,7 +5,7 @@ from passlib.context import CryptContext
 from jose import jwt
 from datetime import datetime, timezone, timedelta
 
-from app.models import User, UserRole, PasswordResetToken
+from app.models import User, UserRole, PasswordResetToken, AuditLog
 from app.schemas import (
     RegisterRequest, TokenResponse, LoginRequest, 
     ForgotPasswordRequest, ResetPasswordRequest
@@ -14,6 +14,7 @@ from app.database import get_db, col_id
 from app.config import settings
 from app.dependencies import get_current_user
 from app.audit import log
+from app.limiter import limiter, get_proxy_aware_ip_key
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -52,10 +53,48 @@ def register(body: RegisterRequest, request: Request, db: Session = Depends(get_
     return {"message": "User registered successfully", "id": user.id}
 
 @router.post("/login", response_model=TokenResponse)
+# Shield #1: Account Shield (1 IP, 1 email)
+@limiter.limit(settings.SLOWAPI_AUTH_LIMIT)
+# Shield #2: Global IP Shield (1 IP, many emails (will be triggered by 1 IP, 1 email also))
+@limiter.limit(settings.SLOWAPI_IP_LIMIT, key_func=get_proxy_aware_ip_key) 
 def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
-    # VULNERABILITY 4.3 - NO RATE LIMITING (unlimited login attempts)
     user = db.query(User).filter(User.email == body.email).first()
     
+    # Shield #3: Inner Shield - check account lockout by the DB
+    # catches ip rotation brute (many ips, 1 email attack)
+    if settings.ENABLE_DB_LOCKOUT and user and user.locked:
+        # Check if ACCOUNT_LOCKOUT_MINUTES have passed since the last LOGIN_FAILED to unlock the account,
+        # otherwise the account is still locked, return 429 and log "LOGIN_FAILED_LOCKED" in the audit
+        last_fail = db.query(AuditLog).filter(
+            AuditLog.user_id == user.id,
+            AuditLog.action == "LOGIN_FAILED",
+        ).order_by(AuditLog.timestamp.desc()).first()
+
+        if last_fail:
+            # sqlite strips timezone info, so we add it back for the comparison
+            fail_time = last_fail.timestamp
+            if fail_time.tzinfo is None:
+                fail_time = fail_time.replace(tzinfo=timezone.utc)
+            
+            if datetime.now(timezone.utc) - fail_time > timedelta(minutes=settings.ACCOUNT_LOCKOUT_MINUTES):
+                # ACCOUNT_LOCKOUT_MINUTES has passed, so we unlock the account
+                user.locked = False
+                db.commit()
+            else:
+                log(
+                    db=db,
+                    action="LOGIN_FAILED_LOCKED",
+                    resource="auth",
+                    user_id=col_id(user.id),
+                    ip_address=request.client.host if request.client else None
+                )
+                # 429 Too Many Requests for standard rate-limiting
+                raise HTTPException(status_code=429, detail="Account temporarily locked due to too many failed attempts")
+        else:
+            # fallback if no last_fail log is found, for the case where account is locked, 
+            # and there are no logs to justify why; although it should not be possible
+            raise HTTPException(status_code=429, detail="Account temporarily locked due to too many failed attempts")
+
     # VULNERABILITY 4.4 - USER ENUMERATION, DIFFERENT MESSAGES FOR INVALID USER/PASS
     if not user:
         log(
@@ -70,11 +109,11 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     # verification is done in a try block to avoid crashing the app if we try to 
     # verify an old md5 token instead of the new bcrypt token
     try:
-        is_valid = password_context.verify(body.password, stored_hash)
+        password_is_valid = password_context.verify(body.password, stored_hash)
     except Exception:
-        is_valid = False
+        password_is_valid = False
         
-    if not is_valid:
+    if not password_is_valid:
         log(
             db=db,
             action="LOGIN_FAILED",
@@ -82,6 +121,25 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
             user_id=col_id(user.id),
             ip_address=request.client.host if request.client else None
         )
+
+        # check for brute force IP rotation (many IPs, 1 email attack)
+        failed_attempts = db.query(AuditLog).filter(
+            AuditLog.user_id == user.id,
+            AuditLog.action == "LOGIN_FAILED",
+            AuditLog.timestamp >= datetime.now(timezone.utc) - timedelta(minutes=15)
+        ).count()
+
+        if failed_attempts >= settings.MAX_LOGIN_ATTEMPTS:
+            user.locked = True
+            db.commit()
+            log(
+                db=db,
+                action="ACCOUNT_LOCKED",
+                resource="auth",
+                user_id=col_id(user.id),
+                ip_address=request.client.host if request.client else None
+            )
+
         raise HTTPException(status_code=401, detail="Wrong password")
     
     # VULNERABILITY 4.5 - weak secret, 1w expiry, no rotation

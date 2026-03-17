@@ -1,12 +1,17 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
+
 from app.config import settings
-from app.database import Base, engine
+from app.database import Base, engine, SessionLocal, col_id
 from sqlalchemy import text
 import app.models  # imported so sqlalchemy registers them before create_all()
-
+from app.limiter import limiter
 from app.auth import router as auth_router
 from app.tickets import router as tickets_router
 from app.audit import router as audit_router
+from app.audit import log
+
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -15,6 +20,27 @@ app = FastAPI(
     debug=settings.DEBUG,
 )
 
+# specific handler for the RateLimitExceeded exception, thrown by slowapi
+@app.exception_handler(RateLimitExceeded)
+async def custom_rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    # log login failure to db
+    db = SessionLocal()
+    try:
+        log(
+            db=db,
+            action="LOGIN_FAILED_SLOWAPI_LIMITER",
+            resource="auth",
+            ip_address=request.client.host if request.client else None
+        )
+    finally:
+        db.close()
+
+    return JSONResponse(
+        status_code=429,
+        content={"detail": f"Rate limit exceeded: {exc.detail}"}
+    )
+
+app.state.limiter = limiter
 app.include_router(auth_router)
 app.include_router(tickets_router)
 app.include_router(audit_router)

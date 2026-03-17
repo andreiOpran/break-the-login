@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from hashlib import md5
+from passlib.context import CryptContext
 from jose import jwt
 from datetime import datetime, timezone, timedelta
 
@@ -16,6 +17,7 @@ from app.audit import log
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # "Depends" calls get_db() (getting what get_db() yields)
 # so it opens and closes a session during the request
@@ -34,8 +36,7 @@ def register(body: RegisterRequest, request: Request, db: Session = Depends(get_
     
     user = User(
         email=body.email,
-        # VULNERABILITY 4.2 - INSECURE PASSWORD STORAGE (MD5, no salt)
-        password_hash = md5(body.password.encode()).hexdigest(),
+        password_hash = password_context.hash(body.password),
         role=UserRole.ANALYST
     )
     db.add(user)
@@ -66,7 +67,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="User not found")
     
     stored_hash: str = str(user.password_hash) # aux var to avoid type check error
-    if stored_hash != md5(body.password.encode()).hexdigest():
+    if not password_context.verify(body.password, stored_hash):
         log(
             db=db,
             action="LOGIN_FAILED",
@@ -184,7 +185,7 @@ def reset_password(
     if user is None:
         raise HTTPException(status_code=400, detail="User not found")
     
-    setattr(user, "password_hash", md5(body.new_password.encode()).hexdigest())
+    setattr(user, "password_hash", password_context.hash(body.new_password))
     db.commit()
     log(
         db=db,

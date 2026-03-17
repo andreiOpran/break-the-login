@@ -14,7 +14,7 @@ from app.database import get_db, col_id
 from app.config import settings
 from app.dependencies import get_current_user
 from app.audit import log
-from app.limiter import limiter, get_proxy_aware_ip_key
+from app.limiter import limiter, get_proxy_aware_ip_key, get_account_targeted_key
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -54,7 +54,7 @@ def register(body: RegisterRequest, request: Request, db: Session = Depends(get_
 
 @router.post("/login", response_model=TokenResponse)
 # Shield #1: Account Shield (1 IP, 1 email)
-@limiter.limit(settings.SLOWAPI_AUTH_LIMIT)
+@limiter.limit(settings.SLOWAPI_AUTH_LIMIT, key_func=get_account_targeted_key)
 # Shield #2: Global IP Shield (1 IP, many emails (will be triggered by 1 IP, 1 email also))
 @limiter.limit(settings.SLOWAPI_IP_LIMIT, key_func=get_proxy_aware_ip_key) 
 def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):

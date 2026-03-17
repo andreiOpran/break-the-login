@@ -42,4 +42,4 @@ def get_account_targeted_key(request: Request):
 
     return ip
 
-limiter = Limiter(key_func=get_account_targeted_key)
+limiter = Limiter(key_func=get_proxy_aware_ip_key)

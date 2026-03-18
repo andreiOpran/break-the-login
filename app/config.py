@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     # SLOWAPI LIMITER
     
     # specific to account (1 ip, 1 email)
-    SLOWAPI_AUTH_LIMIT: str = "3/1 minute"
+    SLOWAPI_AUTH_LIMIT: str = "5/1 minute"
     
     # global shield, blocks an IP after 20 attempts targeting ANY emails (prevents DoS)
     # has higher limit, but still could cause "Collateral Damage"
@@ -33,8 +33,8 @@ class Settings(BaseSettings):
     
     # DB ACCOUNT LOCKOUT
     ENABLE_DB_LOCKOUT: bool = True  # Inner Shield, blocks many IPs targeting one email by locking the account in DB
-    ACCOUNT_LOCKOUT_MINUTES: int = 1
-    MAX_LOGIN_ATTEMPTS: int = 5
+    ACCOUNT_LOCKOUT_MINUTES: int = 15
+    DB_ACCOUNT_LOCKOUT_LIMIT: int = 7
 
     class Config:
         env_file = ".env"

@@ -135,7 +135,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
             AuditLog.timestamp >= datetime.now(timezone.utc) - timedelta(minutes=15)
         ).count()
 
-        if failed_attempts >= settings.MAX_LOGIN_ATTEMPTS:
+        if failed_attempts >= settings.DB_ACCOUNT_LOCKOUT_LIMIT:
             setattr(user, "locked", True)
             db.commit()
             log(

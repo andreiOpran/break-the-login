@@ -14,14 +14,18 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_HOURS: int = 168
     
     # SLOWAPI LIMITER
+    
     # specific to account (1 ip, 1 email)
     SLOWAPI_AUTH_LIMIT: str = "3/1 minute"
+    
     # global shield, blocks an IP after 20 attempts targeting ANY emails (prevents DoS)
     # has higher limit, but still could cause "Collateral Damage"
     # where innocent users sharing an IP get blocked
     SLOWAPI_IP_LIMIT: str = "20/1 minute"
+    
     # set to true to allow spoofing "X-Forwarded-For" and bypassing both limiters
     TRUST_PROXY_HEADERS: bool = True
+    
     # set to True to block the entire IP after 5 fails and basically convert Shield #1 to Shield #2,
     # and cause "Collateral Damage" much earlier
     # set to False to only block the specific ip + email combination, and to work as intended

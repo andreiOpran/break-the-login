@@ -68,7 +68,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     
     # Shield #3: Inner Shield - check account lockout by the DB
     # catches ip rotation brute (many ips, 1 email attack)
-    if settings.ENABLE_DB_LOCKOUT and user and user.locked:
+    if settings.ENABLE_DB_LOCKOUT and user and bool(user.locked):
         # Check if ACCOUNT_LOCKOUT_MINUTES have passed since the last LOGIN_FAILED to unlock the account,
         # otherwise the account is still locked, return 429 and log "LOGIN_FAILED_LOCKED" in the audit
         last_fail = db.query(AuditLog).filter(
@@ -82,9 +82,9 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
             if fail_time.tzinfo is None:
                 fail_time = fail_time.replace(tzinfo=timezone.utc)
             
-            if datetime.now(timezone.utc) - fail_time > timedelta(minutes=settings.ACCOUNT_LOCKOUT_MINUTES):
+            if bool(datetime.now(timezone.utc) - fail_time > timedelta(minutes=settings.ACCOUNT_LOCKOUT_MINUTES)):
                 # ACCOUNT_LOCKOUT_MINUTES has passed, so we unlock the account
-                user.locked = False
+                setattr(user, "locked", False)
                 db.commit()
             else:
                 log(
@@ -136,7 +136,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         ).count()
 
         if failed_attempts >= settings.MAX_LOGIN_ATTEMPTS:
-            user.locked = True
+            setattr(user, "locked", True)
             db.commit()
             log(
                 db=db,

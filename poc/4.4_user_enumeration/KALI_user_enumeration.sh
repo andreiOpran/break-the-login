@@ -10,6 +10,7 @@ echo "TESTING USER ENUMERATION (messages and timing):"
 test_email() {
     local email=$1
     local label=$2
+    local verbose=${3:-true}
     
     # run curl and get results
     local result=$(curl -s -w "\n%{time_total}" -X POST "$TARGET_IP/auth/login" \
@@ -19,18 +20,24 @@ test_email() {
     local time_total=$(echo "$result" | tail -n1)
     local msg=$(echo "$result" | sed '$d' | jq -r .detail 2>/dev/null)
     
-    echo "[$label] $email: Received \"$msg\" in $time_total seconds" >&2
+    if [ "$verbose" = true ]; then
+        echo "[$label] $email: Received \"$msg\" in $time_total seconds" >&2
+    fi
     
     # return via stdout
     echo "$time_total|$msg"
 }
 
+# warming up via test_email() to init hashing context
+test_email "warmup@example.com" "WARMUP" false > /dev/null
+test_email "warmup@example.com" "WARMUP" false > /dev/null
+
 # run tests and capture output
-RES1=$(test_email "4.4@example.com" "EXISTING")
+RES1=$(test_email "4.4@example.com" "EXISTING" true)
 TIME1=$(echo "$RES1" | cut -d'|' -f1)
 MSG1=$(echo "$RES1" | cut -d'|' -f2)
 
-RES2=$(test_email "fake1@example.com" "NON-EXIST")
+RES2=$(test_email "fake4.4@example.com" "NON-EXIST" true)
 TIME2=$(echo "$RES2" | cut -d'|' -f1)
 MSG2=$(echo "$RES2" | cut -d'|' -f2)
 

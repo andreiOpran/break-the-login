@@ -38,6 +38,7 @@ class User(Base):
     role = Column(Enum(UserRole), default=UserRole.ANALYST, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     locked = Column(Boolean, default=False, nullable=False)
+    token_version = Column(Integer, default=0, nullable=False)
 
     tickets = relationship("Ticket", back_populates="owner")
     audit_logs = relationship("AuditLog", back_populates="user")

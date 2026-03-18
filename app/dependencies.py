@@ -21,7 +21,8 @@ def get_current_user(
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id: str | None = payload.get("sub")
-        if user_id is None:
+        token_version: int | None = payload.get("token_version")
+        if user_id is None or token_version is None:
             raise HTTPException(status_code=401, detail="Invalid token")
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
@@ -29,4 +30,9 @@ def get_current_user(
     user=db.get(User, int(user_id))
     if user is None:
         raise HTTPException(status_code=401, detail="User not found")
+    
+    # rotation security check, match the request token version to user current version from the DB
+    if bool(user.token_version != token_version):
+        raise HTTPException(status_code=401, detail="Session expired due to new login")
+    
     return user

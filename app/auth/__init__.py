@@ -154,10 +154,19 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     # VULNERABILITY 4.5 - weak secret, 1w expiry, no rotation
+    # FIXED VULNERABILITY 4.5 - used stronger env secret,
+    # changed expiry to 24h, implemented rotation by having
+    # user.token_version incrementing on every login/pass reset
+    setattr(user, "token_version", user.token_version + 1)
+    db.commit()
+    db.refresh(user)
+
     payload = {
         "sub": str(user.id),
+        "iat": datetime.now(timezone.utc).timestamp(),
         "email": user.email,
         "role": user.role.value,
+        "token_version": user.token_version,
         "exp": datetime.now(timezone.utc) + timedelta(hours=settings.ACCESS_TOKEN_EXPIRE_HOURS),
     }
     # strucure of jwt: header.payload.signature
@@ -175,12 +184,18 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
 
 # VULNERABILITY 4.5 - token remains available after log out,
 # until its expiry, and can still be used if an attacker captures it
+# FIXED VULNERABILITY 4.5 by increment token_version on logout 
 @router.post("/logout")
 def logout(
     request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    # increment token_version for the user to invalidate any existing tokens
+    # meaning it will also log out all devices
+    setattr(current_user, "token_version", current_user.token_version + 1)
+    db.commit()
+
     log(
         db=db,
         action="LOGOUT",
@@ -261,6 +276,8 @@ def reset_password(
     if user is None:
         raise HTTPException(status_code=400, detail="User not found")
     
+    # invalidate all existing sessions by incerementing token_version
+    setattr(user, "token_version", user.token_version + 1)
     setattr(user, "password_hash", password_context.hash(body.new_password))
     db.commit()
     log(

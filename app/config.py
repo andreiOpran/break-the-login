@@ -11,7 +11,7 @@ class Settings(BaseSettings):
 
     SECRET_KEY: str = "this-should-be-retrieved-from-env"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_HOURS: int = 168
+    ACCESS_TOKEN_EXPIRE_HOURS: int = 24 # reduced from 168
     
     # SLOWAPI LIMITER
     

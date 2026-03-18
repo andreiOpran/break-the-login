@@ -1,17 +1,17 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
+from sqlalchemy import text
 
+# import app.models mainly so sqlalchemy registers them before create_all()
+import app.models as models
 from app.config import settings
 from app.database import Base, engine, SessionLocal, col_id
-from sqlalchemy import text
-import app.models  # imported so sqlalchemy registers them before create_all()
 from app.limiter import limiter
 from app.auth import router as auth_router
 from app.tickets import router as tickets_router
 from app.audit import router as audit_router
 from app.audit import log
-
 
 app = FastAPI(
     title=settings.APP_NAME,

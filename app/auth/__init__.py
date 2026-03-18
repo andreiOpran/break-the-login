@@ -102,51 +102,50 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
             raise HTTPException(status_code=429, detail="Account temporarily locked due to too many failed attempts")
 
     # VULNERABILITY 4.4 - USER ENUMERATION, DIFFERENT MESSAGES FOR INVALID USER/PASS
-    if not user:
-        log(
-            db=db,
-            action="LOGIN_FAILED",
-            resource="auth",
-            ip_address=request.client.host if request.client else None
-        )
-        raise HTTPException(status_code=401, detail="User not found")
+    # FIXED VULNERABILITY 4.4 - USER ENUMERATION (Unified messages & Uniform response times)
+    password_is_valid = False
     
-    stored_hash: str = str(user.password_hash) # aux var to avoid type check error
-    # verification is done in a try block to avoid crashing the app if we try to 
-    # verify an old md5 token instead of the new bcrypt token
-    try:
-        password_is_valid = password_context.verify(body.password, stored_hash)
-    except Exception:
-        password_is_valid = False
+    if user:
+        stored_hash: str = str(user.password_hash) # aux var to avoid type check error
+        # verification is done in a try block to avoid crashing the app if we try to 
+        # verify an old md5 token instead of the new bcrypt token
+        try:
+            password_is_valid = password_context.verify(body.password, stored_hash)
+        except Exception:
+            password_is_valid = False
+    else:
+        # avoid timing attacks by simulating bcrypt hashing time for non existent user
+        password_context.dummy_verify()
         
-    if not password_is_valid:
+    if not user or not password_is_valid:
         log(
             db=db,
             action="LOGIN_FAILED",
             resource="auth",
-            user_id=col_id(user.id),
+            user_id=col_id(user.id) if user else None,
             ip_address=request.client.host if request.client else None
         )
 
-        # check for brute force IP rotation (many IPs, 1 email attack)
-        failed_attempts = db.query(AuditLog).filter(
-            AuditLog.user_id == user.id,
-            AuditLog.action == "LOGIN_FAILED",
-            AuditLog.timestamp >= datetime.now(timezone.utc) - timedelta(minutes=15)
-        ).count()
+        if user:
+            # check for brute force IP rotation (many IPs, 1 email attack)
+            failed_attempts = db.query(AuditLog).filter(
+                AuditLog.user_id == user.id,
+                AuditLog.action == "LOGIN_FAILED",
+                AuditLog.timestamp >= datetime.now(timezone.utc) - timedelta(minutes=15)
+            ).count()
 
-        if failed_attempts >= settings.DB_ACCOUNT_LOCKOUT_LIMIT:
-            setattr(user, "locked", True)
-            db.commit()
-            log(
-                db=db,
-                action="ACCOUNT_LOCKED",
-                resource="auth",
-                user_id=col_id(user.id),
-                ip_address=request.client.host if request.client else None
-            )
+            if failed_attempts >= settings.DB_ACCOUNT_LOCKOUT_LIMIT:
+                setattr(user, "locked", True)
+                db.commit()
+                log(
+                    db=db,
+                    action="ACCOUNT_LOCKED",
+                    resource="auth",
+                    user_id=col_id(user.id),
+                    ip_address=request.client.host if request.client else None
+                )
 
-        raise HTTPException(status_code=401, detail="Wrong password")
+        raise HTTPException(status_code=401, detail="Invalid credentials")
     
     # VULNERABILITY 4.5 - weak secret, 1w expiry, no rotation
     payload = {

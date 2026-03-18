@@ -22,18 +22,23 @@ password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # "Depends" calls get_db() (getting what get_db() yields)
 # so it opens and closes a session during the request
-@router.post("/register", status_code=201)
+@router.post("/register", status_code=200)
 def register(body: RegisterRequest, request: Request, db: Session = Depends(get_db)):
     # VULNERABILITY 4.4 - USER ENUMERATION, DIFFERENT MESSAGES FOR EXISTING/NON-EXISTING EMAIL
+    # FIXED VULNERABILITY 4.4 by returning the same success message to prevent attackers from guessing emails
+    # the message says that a verification email will be sent shortly, but that is a mock message because
+    # we do not have the  mail sending feature
     existing = db.query(User).filter(User.email == body.email).first()
     if existing:
         log(
             db=db,
-            action="REGISTER_FAILED",
+            action="REGISTER_FAILED_EXISTS",
             resource="auth",
+            user_id=col_id(existing.id),
             ip_address=request.client.host if request.client else None
         )
-        raise HTTPException(status_code=400, detail="There is already an account with this email")
+        # return a 200 OK to mask that the user exists
+        return {"message": "If the data is valid, a verification email will be sent to you shortly."}
     
     user = User(
         email=body.email,
@@ -54,7 +59,8 @@ def register(body: RegisterRequest, request: Request, db: Session = Depends(get_
         user_id=col_id(user.id),
         ip_address=request.client.host if request.client else None
     )
-    return {"message": "User registered successfully", "id": user.id}
+    # in the vulnerable version we also attached the user.id, but we removed it to keep consistent messaging
+    return {"message": "If the data is valid, a verification email will be sent to you shortly."}
 
 @router.post("/login", response_model=TokenResponse)
 # Shield #1: Account Shield (1 IP, 1 email)

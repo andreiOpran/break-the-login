@@ -37,6 +37,10 @@ def register(body: RegisterRequest, request: Request, db: Session = Depends(get_
     
     user = User(
         email=body.email,
+        # VULNERABILITY 4.1 - WEAK PASSWORD POLICY (no length/complexity check)
+        # FIXED VULNERABILITY 4.1 by implementing password format checker in app/schemas.py
+        # VULNERABILITY 4.2 - INSECURE PASSWORD STORAGE (MD5, no salt)
+        # FIXED VULNERABILITY 4.2 by migrating to bcrypt with salting
         password_hash = password_context.hash(body.password),
         role=UserRole.ANALYST
     )
@@ -58,6 +62,8 @@ def register(body: RegisterRequest, request: Request, db: Session = Depends(get_
 # Shield #2: Global IP Shield (1 IP, many emails (will be triggered by 1 IP, 1 email also))
 @limiter.limit(settings.SLOWAPI_IP_LIMIT, key_func=get_proxy_aware_ip_key) 
 def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    # VULNERABILITY 4.3 - NO RATE LIMITING (unlimited login attempts)
+    # FIXED VULNERABILITY 4.3 via triple shield limiter for various scenarios
     user = db.query(User).filter(User.email == body.email).first()
     
     # Shield #3: Inner Shield - check account lockout by the DB

@@ -49,9 +49,9 @@ jobs:
           POCS=(
             "poc/4.1_weak_password_policy/KALI_weak_password_policy_trivial.sh"
             "poc/4.1_weak_password_policy/KALI_weak_password_policy_detailed.sh"
-            "poc/4.3_brute_force/KALI_brute_force_no_ip_spoofing.bash"
-            "poc/4.3_brute_force/KALI_brute_force_ip_spoofing.bash"
-            "poc/4.3_brute_force/KALI_triple_shield_demo.bash"
+            "poc/4.3_brute_force/KALI_brute_force_no_ip_spoofing.sh"
+            "poc/4.3_brute_force/KALI_brute_force_ip_spoofing.sh"
+            "poc/4.3_brute_force/KALI_triple_shield_demo.sh"
             "poc/4.4_user_enumeration/KALI_user_enumeration.sh"
             "poc/4.5_token_reuse_after_logout/KALI_login_logout_use_token.sh"
             "poc/4.5_token_reuse_after_logout/KALI_rotation_test.sh"
@@ -59,7 +59,7 @@ jobs:
             "poc/4.6_predictable_reset_token/KALI_double_use_token.sh"
             "poc/4.6_predictable_reset_token/HOST_test_token_expiration.sh"
             "poc/4.6_predictable_reset_token/KALI_predict_reset_token.sh"
-            "poc/IDOR/KALI_idor_tickets.bash"
+            "poc/IDOR/KALI_idor_tickets.sh"
             "poc/RBAC/KALI_analyst_changes_ticket_status.sh"
           )
 

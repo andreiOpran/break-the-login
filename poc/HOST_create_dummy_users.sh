@@ -6,9 +6,10 @@ curl -X POST "$TARGET_IP/auth/register" \
   -H "Content-Type: application/json" \
   -d '{"email": "4.2@example.com", "password": "iloveyou"}' | jq .
 
+# change password to "andrew" to show the brute force via ffuf w/ rockyou
 curl -X POST "$TARGET_IP/auth/register" \
   -H "Content-Type: application/json" \
-  -d '{"email": "4.3@example.com", "password": "andrew"}' | jq .
+  -d '{"email": "4.3@example.com", "password": "SecureP@ssword6732"}' | jq .
 
 curl -X POST "$TARGET_IP/auth/register" \
   -H "Content-Type: application/json" \

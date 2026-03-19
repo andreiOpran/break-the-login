@@ -30,7 +30,17 @@ sqlite3 "$DB_PATH" "UPDATE password_reset_tokens SET created_at = datetime(creat
 echo "Token forcefully expired in "
 
 echo -e "\n3. Attempting to use expired token..."
-curl -s -X POST \
+RES=$(curl -s -X POST \
   "$TARGET_IP/auth/reset-password" \
   -H "Content-Type: application/json" \
-  -d "{\"token\": \"$TOKEN\", \"new_password\": \"$NEW_PASSWORD\"}" | jq .
+  -d "{\"token\": \"$TOKEN\", \"new_password\": \"$NEW_PASSWORD\"}")
+
+echo "$RES" | jq .
+
+if echo "$RES" | grep -q "Token has expired"; then
+    echo "[FIXED] Token expiration enforced"
+    exit 0
+else
+    echo "[VULNERABLE] Expired token accepted"
+    exit 1
+fi

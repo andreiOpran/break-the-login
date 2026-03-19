@@ -10,6 +10,18 @@ TRIVIAL_PASSWORD="12"
 # accepts very short or trivial passwords
 # no validation at registration
 echo "Register account (email $TARGET_EMAIL) with trivial password (password \"$TRIVIAL_PASSWORD\"):"
-curl -X POST "$TARGET_IP/auth/register" \
+RESPONSE=$(curl -s -X POST "$TARGET_IP/auth/register" \
   -H "Content-Type: application/json" \
-  -d "{\"email\": \"$TARGET_EMAIL\", \"password\": \"$TRIVIAL_PASSWORD\"}" | jq .
+  -d "{\"email\": \"$TARGET_EMAIL\", \"password\": \"$TRIVIAL_PASSWORD\"}")
+
+echo "$RESPONSE" | jq .
+
+if echo "$RESPONSE" | grep -q 'message'; then
+  # success message means vulnerability exists (bad password accepted)
+  exit 1
+elif echo "$RESPONSE" | grep -q 'detail'; then
+  # validation error (like "Password must be at least 8...") means it's fixed
+  exit 0
+else
+  exit 1
+fi

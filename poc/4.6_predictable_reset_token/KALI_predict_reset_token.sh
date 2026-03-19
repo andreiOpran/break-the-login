@@ -36,6 +36,8 @@ echo "$LOGIN_RESPONSE" | jq .
 
 if echo "$LOGIN_RESPONSE" | grep -q "access_token"; then
     echo -e "\n[VULNERABLE] Login SUCCESSFUL with the new password."
+    exit 1
 else
     echo -e "\n[FIXED] Login FAILED with the new password."
+    exit 0
 fi

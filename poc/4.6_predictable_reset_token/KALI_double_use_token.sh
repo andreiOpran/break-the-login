@@ -26,6 +26,16 @@ curl -s -X POST "$TARGET_IP/auth/reset-password" \
   -d "{\"token\": \"$TOKEN\", \"new_password\": \"$NEW_PASSWORD\"}" | jq .
 
 echo -e "\n3. Performing second password reset with same token..."
-curl -s -X POST "$TARGET_IP/auth/reset-password" \
+RES=$(curl -s -X POST "$TARGET_IP/auth/reset-password" \
   -H "Content-Type: application/json" \
-  -d "{\"token\": \"$TOKEN\", \"new_password\": \"${NEW_PASSWORD}Diff!\"}" | jq .
+  -d "{\"token\": \"$TOKEN\", \"new_password\": \"${NEW_PASSWORD}Diff!\"}")
+
+echo "$RES" | jq .
+
+if echo "$RES" | grep -q "Invalid token"; then
+    echo "[FIXED] Double use prevented"
+    exit 0
+else
+    echo "[VULNERABLE] Double use allowed"
+    exit 1
+fi

@@ -1,4 +1,4 @@
 #!/bin/bash
 # config file for poc
 
-TARGET_IP="http://192.168.200.1:8082"
+TARGET_IP="${TARGET_IP:-http://127.0.0.1:8000}"

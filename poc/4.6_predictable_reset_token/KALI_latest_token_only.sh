@@ -35,11 +35,21 @@ fi
 echo "SECOND token: $TOKEN2"
 
 echo -e "\n3. Attempting to use FIRST (revoked) token..."
-curl -s -X POST "$TARGET_IP/auth/reset-password" \
+RES1=$(curl -s -X POST "$TARGET_IP/auth/reset-password" \
   -H "Content-Type: application/json" \
-  -d "{\"token\": \"$TOKEN1\", \"new_password\": \"$NEW_PASSWORD\"}" | jq .
+  -d "{\"token\": \"$TOKEN1\", \"new_password\": \"$NEW_PASSWORD\"}")
+echo "$RES1" | jq .
 
 echo -e "\n4. Attempting to use SECOND (active) token..."
-curl -s -X POST "$TARGET_IP/auth/reset-password" \
+RES2=$(curl -s -X POST "$TARGET_IP/auth/reset-password" \
   -H "Content-Type: application/json" \
-  -d "{\"token\": \"$TOKEN2\", \"new_password\": \"$NEW_PASSWORD\"}" | jq .
+  -d "{\"token\": \"$TOKEN2\", \"new_password\": \"$NEW_PASSWORD\"}")
+echo "$RES2" | jq .
+
+if echo "$RES1" | grep -q "Invalid token"; then
+    echo "[FIXED] First token was revoked"
+    exit 0
+else
+    echo "[VULNERABLE] First token still worked"
+    exit 1
+fi

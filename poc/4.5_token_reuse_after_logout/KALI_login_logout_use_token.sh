@@ -29,7 +29,9 @@ HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$TARGET_IP/tickets/" \
 if [ "$HTTP_CODE" == "200" ]; then
     echo "Response: HTTP 200 OK"
     echo "[VULNERABLE] Token was NOT invalidated after logout."
+    exit 1
 else
     echo "Response: HTTP $HTTP_CODE"
     echo "[FIXED] Token was successfully invalidated."
+    exit 0
 fi

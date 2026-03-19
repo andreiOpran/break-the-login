@@ -46,9 +46,12 @@ TIME_DIFF=$(awk -v t1=$TIME1 -v t2=$TIME2 'BEGIN { d = t1 - t2; if (d < 0) d = -
 
 echo -e "\nRESULTS OF ABOVE USER ENUMERATION:"
 
+FINAL_EXIT=0
+
 # check if messages are the same
 if [ "$MSG1" != "$MSG2" ]; then
     echo "[VULNERABLE - MESSAGE] Error messages leak existence ('$MSG1' vs '$MSG2')"
+    FINAL_EXIT=1
 else
     echo "[FIXED - MESSAGE] Error messages are IDENTICAL ('$MSG1' vs '$MSG2')"
 fi
@@ -59,6 +62,7 @@ IS_VULNERABLE=$(awk -v d=$TIME_DIFF 'BEGIN { if (d > 0.05) print "1"; else print
 
 if [ "$IS_VULNERABLE" -eq "1" ]; then
     echo "[WARNING - TIMING] Response times are distinguishable (>50ms). Timing attacks are a possible way of user enumerating."
+    FINAL_EXIT=1
 else
     echo "[FIXED - TIMING] Response times are indistinguishable. Timing attacks are not possible."
 fi
@@ -66,3 +70,4 @@ echo "Time difference between \"Existing\" and \"Non-existing\" user check: $TIM
 
 # cleanup
 rm /tmp/*_msg.txt /tmp/*_time.txt 2>/dev/null
+exit $FINAL_EXIT

@@ -35,6 +35,13 @@ curl -s -X POST "$TARGET_IP/auth/register" \
 
 echo -e "\n6. SUCCESS (meets all criteria)"
 TARGET_EMAIL="4.1_success_$RANDOM@example.com"
-curl -s -X POST "$TARGET_IP/auth/register" \
+FINAL_RES=$(curl -s -X POST "$TARGET_IP/auth/register" \
   -H "Content-Type: application/json" \
-  -d "{\"email\": \"$TARGET_EMAIL\", \"password\": \"LongPassword123!\"}" | jq .
+  -d "{\"email\": \"$TARGET_EMAIL\", \"password\": \"LongPassword123!\"}")
+echo "$FINAL_RES" | jq .
+
+if echo "$FINAL_RES" | grep -q 'message'; then
+  exit 0
+else
+  exit 1
+fi

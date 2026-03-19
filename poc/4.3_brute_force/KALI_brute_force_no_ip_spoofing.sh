@@ -14,4 +14,13 @@ do
     -d "{\"email\": \"$TARGET_EMAIL\", \"password\": \"ThisIsNotThePassword_$i\"}")
   
   echo "$RESPONSE" | jq .
+  
+  if echo "$RESPONSE" | grep -iq "Rate limit exceeded\|Account temporarily locked"; then
+    echo "[FIXED] Blocked nicely"
+    exit 0
+  fi
 done
+
+# if loop finishes without hitting a rate limit, it's vulnerable
+echo "[VULNERABLE] No rate limiting encountered after 7 attempts"
+exit 1

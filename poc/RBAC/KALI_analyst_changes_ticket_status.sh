@@ -49,3 +49,11 @@ PATCH_RESP=$(curl -s -X PATCH "$TARGET_IP/tickets/$TICKET_ID" \
   -H "Content-Type: application/json" \
   -d '{"status": "RESOLVED"}')
 echo -e "$PATCH_RESP" | jq .
+
+if echo "$PATCH_RESP" | grep -q "Not authorized to change ticket status"; then
+    echo "[FIXED] Role appropriately enforced."
+    exit 0
+else
+    echo "[VULNERABLE] Analyst was able to resolve ticket."
+    exit 1
+fi

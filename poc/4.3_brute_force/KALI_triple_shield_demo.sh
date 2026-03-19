@@ -44,8 +44,17 @@ for i in {1..5}
 do
   FAKE_IP="$((RANDOM % 256)).$((RANDOM % 256)).$((RANDOM % 256)).$((RANDOM % 256))"
   echo -n "Attempt $i (Spoofed IP: $FAKE_IP) -> $TARGET_EMAIL: "
-  curl -s -X POST "$TARGET_IP/auth/login" \
-    -H "Content-Type: application/json" \
-    -H "X-Forwarded-For: $FAKE_IP" \
-    -d "{\"email\": \"$TARGET_EMAIL\", \"password\": \"ThisIsNotThePassword_shield_$i\"}" | jq -c .
-done
+    RES=$(curl -s -X POST "$TARGET_IP/auth/login" \
+      -H "Content-Type: application/json" \
+      -H "X-Forwarded-For: $FAKE_IP" \
+      -d "{\"email\": \"$TARGET_EMAIL\", \"password\": \"ThisIsNotThePassword_shield_$i\"}")
+    echo "$RES" | jq -c .
+    
+    if echo "$RES" | grep -iq "Account temporarily locked"; then
+      echo "[FIXED] Rate Limits & DB Lockout verified."
+      exit 0
+    fi
+  done
+  
+  echo "[VULNERABLE] Failed to trigger final DB Lockout!"
+  exit 1

@@ -22,4 +22,11 @@ do
     -d "{\"email\": \"$TARGET_EMAIL\", \"password\": \"ThisIsNotThePassword_$i\"}")
   
   echo "$RESPONSE" | jq .
+  if echo "$RESPONSE" | grep -iq "Rate limit exceeded\|Account temporarily locked"; then
+    echo "[FIXED] Blocked nicely despite IP rotation"
+    exit 0
+  fi
 done
+
+echo "[VULNERABLE] Bypassed rate limiting via IP spoofing"
+exit 1

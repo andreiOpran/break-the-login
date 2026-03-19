@@ -10,7 +10,7 @@ TARGET_EMAIL="4.3@example.com"
 # i also made the slowapi to look for the "X-Forwarded-For" first and then look for the actual
 # Kali VM IP, so this can actually work with localhost server and Kali VM
 
-for i in {1..7}
+for i in {1..12}
 do
   FAKE_IP="$((RANDOM % 256)).$((RANDOM % 256)).$((RANDOM % 256)).$((RANDOM % 256))"
   

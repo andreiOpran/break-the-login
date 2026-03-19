@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.dependencies import get_current_user
 from app.schemas import TicketOut, TicketCreate, TicketUpdate
 from app.database import get_db, col_id
-from app.models import User, Ticket
+from app.models import User, Ticket, UserRole
 from app.audit import log
 
 
@@ -78,8 +78,23 @@ def update_ticket(
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id, Ticket.owner_id == current_user.id).first()
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
+        
+    update_data = body.model_dump(exclude_unset=True)
     
-    for field, value in body.model_dump(exclude_unset=True).items():
+    # VULNERABILITY RBAC: analysts can change ticket status
+    # FIXED VULNERABILITY RBAC: only managers can update ticket status
+    if bool("status" in update_data and current_user.role != UserRole.MANAGER):
+        log(
+            db=db,
+            action="UPDATE_TICKET_STATUS_FAILED_RBAC",
+            resource="ticket",
+            user_id=col_id(current_user.id),
+            resource_id=str(ticket.id),
+            ip_address=request.client.host if request.client else None
+        )
+        raise HTTPException(status_code=403, detail="Not authorized to change ticket status")
+    
+    for field, value in update_data.items():
         setattr(ticket, field, value)
     db.commit()
     db.refresh(ticket) # so that ticket.updated_at can be updated in the db

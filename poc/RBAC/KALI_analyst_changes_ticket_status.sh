@@ -6,7 +6,7 @@ source $(dirname "$0")/../config.sh
 # TARGET_IP loaded from config.sh
 SUFFIX=$RANDOM
 ANALYST_EMAIL="RBAC_analyst_${SUFFIX}@example.com"
-PASSWORD="password123"
+PASSWORD="SecureP@ssword6732"
 
 echo -e "Registering analyst user"
 REGISTER_RESP=$(curl -s -X POST "$TARGET_IP/auth/register" \

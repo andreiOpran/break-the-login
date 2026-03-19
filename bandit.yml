@@ -1,0 +1,5 @@
+# Bandit scan configuration
+
+# scan only .py files
+include: ['*.py']
+

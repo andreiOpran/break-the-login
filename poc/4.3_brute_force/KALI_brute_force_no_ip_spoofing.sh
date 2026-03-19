@@ -16,7 +16,7 @@ do
   echo "$RESPONSE" | jq .
   
   if echo "$RESPONSE" | grep -iq "Rate limit exceeded\|Account temporarily locked"; then
-    echo "[FIXED] Blocked nicely"
+    echo "[FIXED] Blocked"
     exit 0
   fi
 done

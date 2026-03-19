@@ -35,9 +35,9 @@ LOGIN_RESPONSE=$(curl -s -X POST "$TARGET_IP/auth/login" \
 echo "$LOGIN_RESPONSE" | jq .
 
 if echo "$LOGIN_RESPONSE" | grep -q "access_token"; then
-    echo -e "\n[VULNERABLE] Login SUCCESSFUL with the new password."
+    echo -e "\n[VULNERABLE] Login SUCCESSFUL with the new password"
     exit 1
 else
-    echo -e "\n[FIXED] Login FAILED with the new password."
+    echo -e "\n[FIXED] Login FAILED with the new password"
     exit 0
 fi

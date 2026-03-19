@@ -23,7 +23,7 @@ do
   
   echo "$RESPONSE" | jq .
   if echo "$RESPONSE" | grep -iq "Rate limit exceeded\|Account temporarily locked"; then
-    echo "[FIXED] Blocked nicely despite IP rotation"
+    echo "[FIXED] Blocked despite IP rotation"
     exit 0
   fi
 done

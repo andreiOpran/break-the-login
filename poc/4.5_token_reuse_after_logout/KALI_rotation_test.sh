@@ -26,9 +26,9 @@ HTTP_CODE_A=$(curl -s -o /dev/null -w "%{http_code}" "$TARGET_IP/tickets/" \
 echo "HTTP Response: $HTTP_CODE_A"
 
 if [ "$HTTP_CODE_A" == "401" ]; then
-    echo -e "\n[SUCCESS] Token Rotation is working -> Token A was invalidated."
+    echo -e "\n[SUCCESS] Token Rotation is working -> Token A was invalidated"
     exit 0
 else
-    echo -e "\n[FAILED] Token Rotation didn't work -> Token A might still be valid."
+    echo -e "\n[FAILED] Token Rotation didn't work -> Token A might still be valid"
     exit 1
 fi

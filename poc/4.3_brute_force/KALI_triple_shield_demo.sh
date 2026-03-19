@@ -51,10 +51,10 @@ do
     echo "$RES" | jq -c .
     
     if echo "$RES" | grep -iq "Account temporarily locked"; then
-      echo "[FIXED] Rate Limits & DB Lockout verified."
+      echo "[FIXED] Rate Limits & DB Lockout verified"
       exit 0
     fi
   done
   
-  echo "[VULNERABLE] Failed to trigger final DB Lockout!"
+  echo "[VULNERABLE] Failed to trigger final DB Lockout"
   exit 1

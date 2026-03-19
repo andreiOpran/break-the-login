@@ -8,7 +8,7 @@ SUFFIX=$RANDOM
 
 VICTIM_EMAIL="IDOR.victim_${SUFFIX}@example.com"
 ATTACKER_EMAIL="IDOR.attacker_${SUFFIX}@example.com"
-PASSWORD="password"
+PASSWORD="SecureP@ssword6732"
 
 # =======================================================================================
 
@@ -72,8 +72,17 @@ fi
 # =======================================================================================
 
 echo -e "\n2. Attacker READS the victim's ticket (IDOR on GET /{id})"
-curl -s -X GET "$TARGET_IP/tickets/$TICKET_ID" \
-  -H "Authorization: Bearer $ATTACKER_TOKEN" | jq .
+RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "$TARGET_IP/tickets/$TICKET_ID" \
+  -H "Authorization: Bearer $ATTACKER_TOKEN")
+BODY=$(echo "$RESPONSE" | head -n -1)
+CODE=$(echo "$RESPONSE" | tail -n 1)
+echo "$BODY" | jq .
+
+if [ "$CODE" == "200" ]; then
+    echo "[VULNERABLE] Attacker successfully read the ticket (HTTP 200)"
+else
+    echo "[FIXED] Attacker failed to read the ticket (HTTP $CODE)"
+fi
 
 # =======================================================================================
 
@@ -99,8 +108,14 @@ fi
 # =======================================================================================
 
 echo -e "\n4. Attacker DELETES the victim's ticketc (shown by HTTP 204) (IDOR on DELETE /{id})"
-# using -i to show the HTTP 204 no content resp
-curl -s -i -X DELETE "$TARGET_IP/tickets/$TICKET_ID" \
-  -H "Authorization: Bearer $ATTACKER_TOKEN"
+RESPONSE=$(curl -s -w "\n%{http_code}" -X DELETE "$TARGET_IP/tickets/$TICKET_ID" \
+  -H "Authorization: Bearer $ATTACKER_TOKEN")
+CODE=$(echo "$RESPONSE" | tail -n 1)
+
+if [ "$CODE" == "204" ]; then
+    echo "[VULNERABLE] Attacker successfully deleted the ticket (HTTP 204)"
+else
+    echo "[FIXED] Attacker failed to delete the ticket (HTTP $CODE)"
+fi
 
 # =======================================================================================

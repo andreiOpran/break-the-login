@@ -50,7 +50,8 @@ def get_ticket(
     current_user: User = Depends(get_current_user) # auth required
 ):
     # VULNERABILITY IDOR: no ownership check, ticket can be retrieved by anyone
-    ticket = db.get(Ticket, ticket_id)
+    # FIXED VULNERABILITY IDOR: added ownership check
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id, Ticket.owner_id == current_user.id).first()
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
@@ -72,11 +73,12 @@ def update_ticket(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user) # auth required
 ):
-    ticket = db.get(Ticket, ticket_id)
+    # VULNERABILITY IDOR: no ownership check, ticket can be updated by anyone
+    # FIXED VULNERABILITY IDOR: added ownership check
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id, Ticket.owner_id == current_user.id).first()
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
     
-    # VULNERABILITY IDOR: no ownership check, ticket can be updated by anyone
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(ticket, field, value)
     db.commit()
@@ -99,7 +101,8 @@ def delete_ticket(
     current_user: User = Depends(get_current_user) # auth required
 ):
     # VULNERABILITY IDOR: no ownership check, ticket can be deleted by anyone
-    ticket = db.get(Ticket, ticket_id)
+    # FIXED VULNERABILITY IDOR: added ownership check
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id, Ticket.owner_id == current_user.id).first()
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
     

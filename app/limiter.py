@@ -37,7 +37,7 @@ def get_account_targeted_key(request: Request):
         if body_bytes:
             body = json.loads(body_bytes)
             return f"{ip}:{body.get('email', 'unknown')}"
-    except Exception:
+    except (json.JSONDecodeError, AttributeError):
         pass
 
     return ip

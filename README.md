@@ -1,6 +1,7 @@
 # Break the Login – Attacking and Securing Authentication (AuthX)
 
----
+[![Security CI (SAST/DAST)](https://github.com/andreiOpran/break-the-login/actions/workflows/security.yml/badge.svg)](https://github.com/andreiOpran/break-the-login/actions/workflows/security.yml)
+
 
 ## Project Objective
 The goal of this project is to understand how an authentication and authorization system is attacked in practice and how it must be correctly implemented to resist real-world attacks.

@@ -69,8 +69,11 @@ jobs:
               
               # 1. clear the database and restart the app to clear the slowapi rate limiting + db rate limiting
               rm -f authx.db  
-              docker compose up -d
+              UID=$(id -u) GID=$(id -g) docker compose up -d
               sleep 3
+              
+              # wait until the file is created, then give it 777 permissions to allow host sqlite3 commands
+              docker compose exec app chmod 777 authx.db || true
               
               # 2. seed dummy users
               chmod +x poc/HOST_create_dummy_users.sh

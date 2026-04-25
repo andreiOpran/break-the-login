@@ -57,13 +57,14 @@ else
     echo -e "#!/bin/bash\n\nTARGET_IP=\"http://$HOST_IP:$PORT\"" > "$POC_CONFIG_FILE"
 fi
 
-# 3. handle venv 
-if [ ! -d ".venv" ]; then
-    echo "Creating virtual environment and installing dependencies..."
-    python3 -m venv .venv
-    source .venv/bin/activate
-    pip install -r requirements.txt
+# 3. handle docker
+if ! command -v docker &> /dev/null; then
+    echo "Error: docker is not installed. Please install docker and docker-compose first."
+    exit 1
 fi
+
+echo "Building and starting containers using docker-compose..."
+docker compose build
 
 # 4. connection summary
 echo ""
@@ -79,4 +80,4 @@ echo "=================================================="
 echo ""
 
 # 5. run
-.venv/bin/uvicorn app.main:app --reload --host "$HOST_IP" --port "$PORT"
+docker compose up

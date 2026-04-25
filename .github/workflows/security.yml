@@ -34,19 +34,15 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Install app dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+      - name: Install wait-for-it for sync
+        run: sudo apt install -y wait-for-it
 
       - name: Run All PoC Tests (Automated Security Testing and Exploit Verification)
         run: |
-          export TARGET_IP="http://127.0.0.1:8000"
+          export TARGET_IP="http://127.0.0.1:8082"
+          
+          # build the container once before the loop
+          docker compose build
           
           # list of all automation suitable poc's
           POCS=(
@@ -73,8 +69,7 @@ jobs:
               
               # 1. clear the database and restart the app to clear the slowapi rate limiting + db rate limiting
               rm -f authx.db  
-              uvicorn app.main:app --host 127.0.0.1 --port 8000 > server.log 2>&1 &
-              APP_PID=$!
+              docker compose up -d
               sleep 3
               
               # 2. seed dummy users
@@ -92,8 +87,7 @@ jobs:
               echo "$OUTPUT"
               
               # 4. cleanup server
-              kill $APP_PID
-              wait $APP_PID 2>/dev/null || true
+              docker compose down
               
               # 5. exec eval
               if [ $POC_EXIT_CODE -eq 0 ]; then

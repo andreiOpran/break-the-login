@@ -182,7 +182,7 @@ The vulnerable version of the application did not enforce a password policy duri
 
 To demonstrate the vulnerability, two bash scripts were written and executed from the Kali VM against the target API:
 \begin{itemize}
-    \item \texttt{poc/4.1\_weak\_password\_policy/KALI\_weak\_password\_policy\_trivial.sh} attempts to register an account with a single-character password (e.g., \texttt{1}).
+    \item \texttt{poc/4.1\_weak\_password\_policy/KALI\_weak\_password\_policy\_trivial\allowbreak .sh} attempts to register an account with a single-character password (e.g., \texttt{1}).
     \item \texttt{poc/4.1\_weak\_password\_policy/KALI\_weak\_password\_policy\_detailed.sh} sends a variety of weak passwords, each lacking a specific complexity (minimum length, \texttt{[A-Z]}, \texttt{[a-z]}, \texttt{\textbackslash d}, and special characters) to show the various error messages the backend sends when validating password complexity in the fixed version  of the app.
     \item The output of the \texttt{poc/4.1\_weak\_password\_policy/KALI\_weak\_password\_policy\_trivial.sh} script for the vulnerable version of the app can be seen in \textit{Figure 4}.
 \end{itemize}
@@ -279,7 +279,7 @@ In the vulnerable state, the app's database stored the user credentials in an ou
 
 \subsubsection*{4.2.2 Attack Demonstration (PoC)}
 
-We simulated a scenario where the database was leaked or accessed via SQL injection using the \texttt{HOST\_dump\_password\_hashes.sh} script. Following this simulation we got access to the MD5 hashes and on the Kali Linux machine we did the following:
+We simulated a scenario where the database was leaked or accessed via SQL injection using the \texttt{HOST\_dump\_\allowbreak password\_hashes.sh} script. Following this simulation we got access to the MD5 hashes and on the Kali Linux machine we did the following:
 \begin{itemize}
     \item \texttt{KALI\_crack\_hash\_md5.sh} is executed against the leaked \texttt{hash\_md5.txt} file.
 \end{itemize}
@@ -577,8 +577,8 @@ JWTs are made to be stateless, making server-side invalidation difficult without
 In \texttt{app/auth/\_\_init\_\_.py}:
 \begin{enumerate}
     \item Every distinct \texttt{/login} increments \texttt{user.token\_version}.
-    \item The \texttt{/logout} explicitly mutates the DB state \texttt{setattr(current\_user, "token\_version", current\_user.token\_version + 1)}. Therefore, all active global tokens for this user are instantly invalidated.
-    \item On every internally protected route (handled by \texttt{dependencies.py} via \texttt{get\_current\_user}), the application dynamically cross-references \texttt{jwt\_token["token\_version"] == user.token\_version}. 
+    \item The \texttt{/logout} explicitly mutates the DB state \texttt{setattr(current\_\allowbreak user, "token\_version", current\_user.token\_version + 1)}. Therefore, all active global tokens for this user are instantly invalidated.
+    \item On every internally protected route (handled by \texttt{dependencies.py} via \texttt{get\_current\_\allowbreak user}), the application dynamically cross-references \texttt{jwt\_token["token\_version"] == user.token\_\allowbreak version}. 
 \end{enumerate}
 
 \textbf{Fixed Code (\texttt{app/auth/\_\_init\_\_.py}):}
@@ -665,7 +665,7 @@ The remediation changed the entirely deterministic schema, making the generated 
 In \texttt{app/auth/\_\_init\_\_.py}:
 \begin{itemize}
     \item Introduced \texttt{secrets.token\_urlsafe()} explicitly enforcing a cryptographically-secure random string factory instead of deterministic email hashing.
-    \item The DB object sets a token lifetime of 60 minutes (\texttt{datetime.now(timezone.utc) + timedelta(minutes=60)}).
+    \item The DB object sets a token lifetime of 60 minutes (\texttt{datetime.now(timezone.utc) + timedelta(minutes\allowbreak =60)}).
     \item The \texttt{/reset-password} endpoint checks all temporal parameters and marks the token as used, preventing multi-use replay.
 \end{itemize}
 
@@ -775,7 +775,7 @@ After implementing the securement, it is clear to see, via \textit{Figure 17} th
 
 \subsection*{5.2 DevSecOps: SAST, DAST, and Automated CI/CD}
 
-The security checks from the \texttt{/poc} folder were completely automated via GitHub Actions (\texttt{.github/workflows/security.yml}). The CI/CD pipeline consists of two distinct jobs that support code quality and production readiness:
+The security checks from the \texttt{/poc} folder were completely automated via GitHub Actions (\texttt{.github/\allowbreak work-flows/security.yml}). The CI/CD pipeline consists of two distinct jobs that support code quality and production readiness:
 
 \begin{enumerate}
     \item \textbf{SAST Scan (\texttt{bandit}):} A Static Application Security Testing runner automatically pulls the repository upon \texttt{push} or \texttt{pull\_request} against the \texttt{fixed} branch. It invokes \texttt{bandit -r app/ -c "bandit.yml"}. Bandit scans the Python files, ensuring cryptographic assertions, safe environment variables, proper inputs, and preventing basic injection patterns. If vulnerabilities above minimum threshold are discovered, the build fails.
@@ -797,7 +797,7 @@ The security checks from the \texttt{/poc} folder were completely automated via 
 
 We created a custom, real-time logging sub-module in \texttt{app/audit/}. This was done to support post-breach forensics by having the needed evidence for an eventual incident response.
 
-The \texttt{AuditLog} SQLAlchemy model is integrated inside every sensitive route from \texttt{app/auth/\_\_init\_\_.py} and \texttt{app/tickets/\_\_init\_\_.py}. For every event, we log asynchronously the following variables: the explicit DB \texttt{user\_id}, the origin \texttt{ip\_address}, and explicit enumeration triggers (\texttt{REGISTER\_FAILED\_EXISTS}, \texttt{UPDATE\_TICKET\_STATUS\_FAILED\_RBAC}, \texttt{LOGIN\_FAILED\_LOCKED}).
+The \texttt{AuditLog} SQLAlchemy model is integrated inside every sensitive route from \texttt{app/auth/\allowbreak \_\_init\_\_.py} and \texttt{app/tickets/\_\_init\_\_.py}. For every event, we log asynchronously the following variables: the explicit DB \texttt{user\_id}, the origin \texttt{ip\_address}, and explicit enumeration triggers (\texttt{REGISTER\_FAILED\_EXISTS}, \texttt{UPDATE\_TICKET\_STATUS\_FAILED\_RBAC}, \texttt{LOGIN\_FAILED\_LOCKED}).
 
 We left an example of a usage for the Audit Logs table in \textit{Figure 19}. Here we showed a brute-force attempt for the \texttt{/login} endpoint targeting the user with ID \texttt{1}. We can see subsequent requests with the action \texttt{LOGIN\_FAILED}, and then a single request with the action \texttt{LOGIN}, all from the IP address \texttt{172.19.0.1}, meaning that the attacker succeeded in guessing the user's password.
 

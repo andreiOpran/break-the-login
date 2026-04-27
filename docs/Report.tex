@@ -1,0 +1,824 @@
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+\usepackage{hyperref}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{textcomp}
+\usepackage{inconsolata}
+
+
+\definecolor{pyblue}{HTML}{005CC5}
+\definecolor{pygreen}{HTML}{22863A}
+\definecolor{pyred}{HTML}{D73A49}
+\definecolor{pyorange}{HTML}{E36209}
+\definecolor{pygray}{HTML}{6A737D}
+\definecolor{pybg}{HTML}{F6F8FA}
+
+\lstdefinestyle{pystyle_modern}{
+    language=Python,
+    backgroundcolor=\color{pybg},
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\color{pyred}\bfseries,
+    stringstyle=\color{pyblue},
+    commentstyle=\color{pygray}\itshape,
+    numberstyle=\tiny\color{pygray},
+    emph={self, cls, True, False, None},
+    emphstyle=\color{pyorange}\bfseries,
+    emph={[2]@classmethod, @staticmethod, @property, __init__, __new__, __str__, __repr__},
+    emphstyle={[2]\color{pygreen}\bfseries},
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=10pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=4,
+    frame=leftline,
+    rulecolor=\color{pygray},
+    xleftmargin=10pt,
+    upquote=true
+}
+
+\lstset{style=pystyle_modern}
+
+\usepackage{hyperref}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=pyblue,
+    urlcolor=pyblue,
+    citecolor=pyblue
+}
+
+\title{\textbf{Break the Login Project - Attacking and Securing Authentication}}
+\author{Andrei Opran, group 342}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section*{1. Introduction}
+
+\subsection*{1.1 Project Objective and Scenario}
+
+This report analyzes the security of a fictional internal application for the company ``AuthX''. We first built an intentionally vulnerable system, exploited its vulnerabilities in a safe environment and then secured it,
+showing that the previous ways to exploit the app are not working anymore. These vulnerabilities were mainly focused on authentication and session management mechanisms.
+
+As mentioned before, the scenario follows a fictional company ``AuthX,'' that has developed an internal tool for its employees to manage confidential resources. The initial version of this tool has been flagged as having serious authentication, password management, session management and role-based access control issues. We played the dual-role of security tester and developer to identify and show vulnerabilities and then to implement and harden the system against future threats. All steps took in this dual role testing and development are detailed in this report.
+
+To facilitate code review, the \href{https://github.com/andreiOpran/break-the-login}{GitHub repository} is organized into two distinct branches. The \texttt{vulnerable} branch contains the initial, exploitable version of the app along with its associated proof-of-concept scripts, while the \texttt{fixed} branch contains the fully remediated codebase.
+
+\subsection*{1.2 Application Architecture}
+
+The ``AuthX'' web application is built using a modern, fast and asynchronous web framework, resulting in a production-ready RESTful API.
+
+\begin{itemize}
+    \item \textbf{Backend Framework:} FastAPI (Python) uses asynchronous routing and Pydantic for data validation via the schemas.
+    \item \textbf{Database Layer:} The project uses a relational database managed through SQLAlchemy ORM, separating business logic from raw SQL queries, and also streamlining protection against SQL injection attacks.
+    \item \textbf{Modular Structure:} The application is split into logical modules: \texttt{auth/} (for registration, login, and password resets), \texttt{tickets/} (for business logic CRUD operations), and \texttt{audit/} (for tracking user actions or possible attacks).
+    \item \textbf{Security Features:} Uses SlowAPI for rate limiting to prevent brute force, bcrypt for secure password storage, and secure JWT session management (with a note that this is used just in post-remediation, in the \texttt{fixed} branch).
+\end{itemize}
+
+\vspace{1em}
+\hrule
+\vspace{1em}
+
+\section*{2. Environment Setup}
+
+\subsection*{2.1 Lab Architecture}
+
+We used a hybrid lab setup to provide a safe and controlled testing environment. What we mean by hybrid is that the attack simulations are executed from a Kali Linux virtual machine, while the target AuthX application is hosted on the local Ubuntu machine. The safety of the local machine is provided by the app running in non-root Docker containers to prevent exploits like privilege escalation. The actual setup can be seen in \textit{Figure 1}.
+
+\begin{itemize}
+    \item \textbf{Attacker Machine:} Kali Linux, equipped with penetration testing tools like \texttt{ffuf}, \texttt{curl}, and customized bash scripts from the \texttt{poc/} folder.
+    \item \textbf{Target Machine:} Local Ubuntu host running the AuthX application via non-root Docker containers.
+    \item \textbf{Networking:} NAT-based connectivity through \texttt{libvirt's virbr1} between the Kali VM and the local containers running on the Ubuntu host.
+\end{itemize}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/figure1.png}
+    \caption{On the left, we have the local Ubuntu terminal, and on the right we have the Kali Linux VM window, also with the terminal open, both showing the hostname and user identity, together with date and time information.}
+\end{figure}
+
+\subsection*{2.2 Framework and Deployment}
+
+The target application is containerized using Docker and Docker Compose to ensure safe simulations and consistency across different computers and environment. Also this streamlines the automated CI/CD pipeline a lot, by helping to boot up the application in just one line inside the pipeline runner. The environment orchestration is handled by the comprehensive \texttt{run.sh} script, which configures necessary firewall rules (if given specific \texttt{''fw''} argument) to expose the local app via the virtual bridge to the VM, dynamically resolves the host IP for knowing which address to request to, and also writes various variables for the scripts via \texttt{poc/config.sh}, finally orhcestrating the localized Docker Compose deployment. The \texttt{run.sh} script and connection via the attacker machine can be seen in \textit{Figure 2}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/figure2.png}
+    \caption{Successful output of \texttt{./run.sh} showing the application startup, Docker container running, final listening URL (\texttt{http://192.168.200.1:8082}), and successfull requests made by the attacker machine.}
+\end{figure}
+
+\vspace{1em}
+\hrule
+\vspace{1em}
+
+\section*{3. MVP Implementation}
+
+Before starting to develop the exploits, an intentionally vulnerable minimum viable product was created to fulfill as a baseline for starting the securement.
+
+\subsection*{3.1 User Registration and Authentication}
+
+The API provides a \texttt{/register} endpoint allowing users to sign up by email and password, assigning a default role. It is important to note the fact that neither the vulnerable or fixed version of the app provides some sort of email verification, so anyone can use any email to register if an account with that specific email was not already created. The \texttt{/login} authenticates these credentials and returns a JWT access token. Initially, the MVP lacked a complex password policy, rate limiting and session invalidation. An example usage of user registration and authentication can be seen in \textit{Figure 3}.
+
+\subsection*{3.2 Database Schema}
+
+The database architecture has three primary entities, created via SQLAlchemy:
+\begin{itemize}
+    \item \textbf{Users Table:} Stores the unique \texttt{id}, \texttt{email}, \texttt{password\_hash}, \texttt{role} (Analyst/Manager), creation timestamp, and a \texttt{locked} boolean flag for account locking when we detect the account is targeted by brute-force attacks.
+    \item \textbf{Tickets Table:} Manages the core confidential data. It stores ticket severity, status (\texttt{OPEN}, \texttt{IN\_PROGRESS}, \texttt{RESOLVED}), and foreign key relationships to the users who created them.
+    \item \textbf{Audit Table:} A real-time tracking table that logs various actions (e.g., failed logins, password resets), also logging actions by IP addresses and user IDs to ensure robust evidence and to traceback the attack to the persons responsible.
+\end{itemize}
+
+\subsection*{3.3 Business Logic (CRUD)}
+
+Users interact with tickets through classic Create, Read, Update, and Delete operations. In the vulnerable MVP, access controls (IDOR and RBAC) were improperly enforced, creating access to attacks like privilege escalation.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/figure3.png}
+    \caption{Demonstration of normal application usage - registering a user and creating a ticket through the API.}
+\end{figure}
+
+\vspace{1em}
+\hrule
+\vspace{1em}
+
+\section*{4. Detecting and fixing possible exploits}
+
+This is the major section of the report which shows the exploits and their securement inside the ''AuthX'' MVP, primarly but not limited to the authentication features. We tried to categorize each vulnerability found to the ''OWASP Top 10'' list, also giving its ''CWE Code'', severity level and estimating a ''CVSS Score''.
+
+\subsection*{4.1 Weak Password Policy}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Attribute} & \textbf{Value} \\ \hline
+OWASP Category & A07:2021 - Identification and Authentication Failures \\ \hline
+CWE Code & CWE-521: Weak Password Requirements \\ \hline
+Severity Level & HIGH \\ \hline
+Estimated CVSS Score & 7.5 \\ \hline
+\end{tabular}
+\end{table}
+
+\subsubsection*{4.1.1 Description}
+
+The vulnerable version of the application did not enforce a password policy during user registration or password reset (\texttt{/register}, \texttt{/forgot-password}). There were no checks for password length or complexity. According to OWASP Identification and Authentication Failures, allowing weak or simple passwords seriously increases the app's vulnerability to credential stuffing or automated brute force attacks.
+
+\subsubsection*{4.1.2 Attack Demonstration (PoC)}
+
+To demonstrate the vulnerability, two bash scripts were written and executed from the Kali VM against the target API:
+\begin{itemize}
+    \item \texttt{poc/4.1\_weak\_password\_policy/KALI\_weak\_password\_policy\_trivial.sh} attempts to register an account with a single-character password (e.g., \texttt{1}).
+    \item \texttt{poc/4.1\_weak\_password\_policy/KALI\_weak\_password\_policy\_detailed.sh} sends a variety of weak passwords, each lacking a specific complexity (minimum length, \texttt{[A-Z]}, \texttt{[a-z]}, \texttt{\textbackslash d}, and special characters) to show the various error messages the backend sends when validating password complexity in the fixed version  of the app.
+    \item The output of the \texttt{poc/4.1\_weak\_password\_policy/KALI\_weak\_password\_policy\_trivial.sh} script for the vulnerable version of the app can be seen in \textit{Figure 4}.
+\end{itemize}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/figure4.png}
+    \caption{Terminal running the weak password script. Shows successful HTTP 201 responses when submitting trivial 1-character passwords.}
+\end{figure}
+
+\subsubsection*{4.1.3 Impact Analysis}
+
+If a legitimate user is allowed to select weak password then their account could be easily compromised via credential stuffing or brute force attacks using common passwords lists, leading to unauthorized access to sensitive and confidential company data. These attacks could be limited also via Multi-Factor Authentication or by rate limiting, but a trivial intial solution that yields high value for little work is implementing a complex password policy which is shown in the next step.
+
+\subsubsection*{4.1.4 Remediation (Fix Implementation)}
+
+The incoming HTTP request for registering or password reseting has to go through a schema enforcing via Pydantic. The single verification that was made for this password was that it was a string, so there were no contraints enforced natively.
+
+
+\textbf{Vulnerable Code (\texttt{app/schemas.py}):}
+\begin{lstlisting}[language=Python]
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str
+\end{lstlisting}
+
+This vulnerability was fixed by implementing strict validation within the Pydanic schema used for the registering and password resetting (\texttt{RegisterRequest} and \texttt{ResetPasswordRequest} in \texttt{schemas.py}and )
+
+\textbf{Fixed Code (\texttt{app/schemas.py}):}
+\begin{lstlisting}[language=Python]
+def validate_password_complexity(password: str) -> str:
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters long")
+    if not search(r"[A-Z]", password):
+        raise ValueError("Password must contain at least one uppercase letter")
+    if not search(r"[a-z]", password):
+        raise ValueError("Password must contain at least one lowercase letter")
+    if not search(r"\d", password):
+        raise ValueError("Password must contain at least one digit")
+    if not search(r"[!@#$%^&*(),.?:{}|<>]", password):
+        raise ValueError("Password must contain at least one special character")
+    return password
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+    @field_validator("password")
+    def validate_password(cls, v):
+        return validate_password_complexity(v)
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+    @field_validator("new_password")
+    def validate_password(cls, v):
+        return validate_password_complexity(v)
+\end{lstlisting}
+
+Adding this validator makes sure that any API request lacking mandatory complexity (minimum length, \texttt{[A-Z]}, \texttt{[a-z]}, \texttt{\textbackslash d}, and special characters) is blocked at the routing layer returning an HTTP 422 response, never touching the actual backend logic.
+
+\subsubsection*{4.1.5 Retest}
+
+When we re-executed the PoC scripts via the \texttt{security.yml} automated pipeline and manual terminal execution, the server correctly rejected the requests at the routing level. The output of the manual terminal execution can be seen in \textit{Figure 5}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/figure5.png}
+    \caption{Terminal executing \texttt{KALI\_weak\_password\_policy\_detailed.sh} after the fix, that sent various weak passwords to show the differrent error messages, all showing an HTTP 422 Unprocessable Entity response. We give a small note that the whole script output could not be shown in a single terminal window, so the rest of the output was copied and pasted in an additional text editor to the right of the attacker's terminal.}
+\end{figure}
+
+\vspace{1em}
+\hrule
+\vspace{1em}
+
+\subsection*{4.2 Insecure Password Storage}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Attribute} & \textbf{Value} \\ \hline
+OWASP Category & A02:2021 - Cryptographic Failures \\ \hline
+CWE Code & CWE-256: Unprotected Storage of Credentials \\ \hline
+Severity Level & CRITICAL \\ \hline
+Estimated CVSS Score & 9.1 \\ \hline
+\end{tabular}
+\end{table}
+
+\subsubsection*{4.2.1 Description}
+
+In the vulnerable state, the app's database stored the user credentials in an outdated and non-salted hashing, specifically it used the MD5 algorithm. This severe crypographic failure, specifically mentioned in OWASP A02:2021-Cryptographic Failures makes the entire database vulnerable to rapid offline cracking via various brute force tools or mathcing with rainbow tables if the database is leaked.
+
+\subsubsection*{4.2.2 Attack Demonstration (PoC)}
+
+We simulated a scenario where the database was leaked or accessed via SQL injection using the \texttt{HOST\_dump\_password\_hashes.sh} script. Following this simulation we got access to the MD5 hashes and on the Kali Linux machine we did the following:
+\begin{itemize}
+    \item \texttt{KALI\_crack\_hash\_md5.sh} is executed against the leaked \texttt{hash\_md5.txt} file.
+\end{itemize}
+Knowing that MD5 lacks cryptographic salting and the verifying is not costly at all, the cracking process that utilized the \texttt{ffuf} fuzzing tool took only seconds for a common password. The output of the password cracking can be seen in \textit{Figure 6}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/figure6.png}
+    \caption{Terminal showing the extracted MD5 hashes and the execution of the \texttt{ffuf} fuzzing tool, successfully retrieving the plain-text passwords in seconds.}
+\end{figure}
+
+\subsubsection*{4.2.3 Impact Analysis}
+
+If the database is leaked or compromised, insecure password storage grants attackers the plain credentials of the entire user base. Because password reuse is common, this also leads to users' accounts to be compromised on external platforms.
+
+It is important to note that the fuzzing list is very long, and if the common password is placed somewhere at the end of the list, then the process could take minutes instead of seconds, although this still shows that cracking the passwords is not a hard process. Also, this could be done very easily using sites like \href{https://crackstation.net/}{CrackStation} that use rainbow tables.
+
+\subsubsection*{4.2.4 Remediation (Fix Implementation)}
+
+The vulnerability existed because the password string passed via the request was converted using the trivial MD5 encoding utilizing Python's fundamental \texttt{hashlib} library, without generating any salt entropy.
+
+\textbf{Vulnerable Code (\texttt{app/auth/\_\_init\_\_.py}):}
+\begin{lstlisting}[language=Python]
+from hashlib import md5
+
+# Inside the /register function
+user = User(
+    email=body.email,
+    password_hash = md5(body.password.encode()).hexdigest(),
+    role=UserRole.ANALYST
+)
+\end{lstlisting}
+
+The app was updated to utilzie more up-to-date hashing. As observed in \texttt{app/auth/\_\_init\_\_.py}, the \texttt{hashlib.md5} was replaced with the library \texttt{PassLib},  configured to build mathematically expensive \texttt{bcrypt} proofs with autonomous built-in salting mecahnisms.
+
+Additionally, we note that updating the hashing to something more up-to-date is a part of securing the credentials against cracking - having a complex password complexity basically makes the dictionary brute force offline cracking to be a useless process, as these lists contain mostly trivial passwords.
+
+\textbf{Fixed Code (\texttt{app/auth/\_\_init\_\_.py}):}
+\begin{lstlisting}[language=Python]
+from passlib.context import CryptContext
+
+password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# Inside the /register function
+user = User(
+    email=body.email,
+    password_hash = password_context.hash(body.password),
+    role=UserRole.ANALYST
+)
+\end{lstlisting}
+
+User registration and password resetting uses the \texttt{password\_context.hash(password)} function. The \texttt{bcrypt} algorithm utilizes work-factor iterations, rendering dictionary brute force offline cracking to be a useless process (the verifying of a hash now takes ~1 second, instead of the instant verifying of the previously used MD5).
+
+\subsubsection*{4.2.5 Retest}
+
+Following the fix, a new database dump via the \texttt{HOST\_dump\_password\_hashes.sh} script returns Bcrypt strings (starting with \texttt{\$2b\$}).
+
+Running \texttt{KALI\_crack\_hash\_bcrypt.sh} shows that the estimated cracking time for even a moderately complex password climbs from seconds to a unrealistic time. The output can be seen in \textit{Figure 7}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/figure7.png}
+    \caption{Terminal screenshot proving the inability of the basic cracking script to crack the bcrypt hashes in a realistic timeframe.}
+\end{figure}
+
+\vspace{1em}
+\hrule
+\vspace{1em}
+
+\subsection*{4.3 Brute Force and Lack of Rate Limiting}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Attribute} & \textbf{Value} \\ \hline
+OWASP Category & A07:2021 - Identification and Authentication Failures \\ \hline
+CWE Code & CWE-307: Improper Restriction of Excessive Authentication Attempts \\ \hline
+Severity Level & HIGH \\ \hline
+Estimated CVSS Score & 7.5 \\ \hline
+\end{tabular}
+\end{table}
+
+\subsubsection*{4.3.1 Description}
+
+For the first vulnerable implementation of the authentication endpoint (\texttt{/login}), it had no mechanisms to limit the total number of login attempts a single IP address or user could make within a given time frame. This continues onto the vulnerability of unrestricted brute-force and credential stuffing attacks.
+
+\subsubsection*{4.3.2 Attack Demonstration (PoC)}
+
+We wrote and launched the \texttt{KALI\_brute\_force\_ffuf\_rockyou.sh} script which levrages the \texttt{ffuf} to rapidly iterate through thousands of password combinations agains the API in seconds, without encountering any IP bans or delays from the server. The output of the script can be seen in \textit{Figure 8}.
+
+Furthermore, attackers capable of rotating or spoofing their \texttt{X-Forwarded-For} HTTP headers (demonstrated in \texttt{KALI\_brute\_force\_ip\_spoofing.sh}) bypassed simplistic edge-firewall rules. The server actually took into account the \texttt{X-Forwarded-For} HTTP headers as a way to demonstrate some sort of IP rotation, even if this should not be used in a production environment (\texttt{X-Forwarded-For} HTTP headers should not override the requesting's IP address)
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/figure8.png}
+    \caption{Terminal executing the FFUF brute-force script, showing lots of HTTP 401s followed by a single HTTP 200 OK showing that the password was successfully guessed, with no rate-limiting imposed.}
+\end{figure}
+
+\subsubsection*{4.3.3 Impact Analysis}
+
+An attacker can automate login attempts using wordlists (e.g., \texttt{rockyou.txt}), not being restricted by any rate limits, and it basically guarantees the cracking of accounts that have weak passwords.
+
+\subsubsection*{4.3.4 Remediation (Fix Implementation)}
+
+The vulnerability existed because the vulnerable \texttt{/login} endpoint directly executed database queries with no throttling, limiting or blocking recurrent identical or high-frequency requests.
+
+\textbf{Vulnerable Code (\texttt{app/auth/\_\_init\_\_.py}):}
+\begin{lstlisting}[language=Python]
+@router.post("/login", response_model=TokenResponse)
+def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == body.email).first()
+    # Query blindly repeated unrestricted
+\end{lstlisting}
+
+A comprehensive ``Triple Shield'' rate-limiting defense was implemented in \texttt{app/limiter.py} utilizing the \texttt{SlowAPI} library:
+\begin{itemize}
+    \item \textbf{Global IP Shield/Account Targeted Key}: \texttt{get\_proxy\_aware\_ip\_key} limits connections per physical remote address, while limiting specific targets via \texttt{get\_account\_targeted\_key} which concatenates \texttt{IP:email} to mitigate botnets executing distributed targeted brute forces.
+    \item \textbf{Account Lockout}: The schema introduced a boolean \texttt{locked} attribute that is toggled to \texttt{True} via a DB query upon excedding a limit of login failures for the targeted account within 15 minutes.
+    \item \textbf{Audit Integration}: In \texttt{main.py}, rate-limit violations trigger the \texttt{custom\_rate\_limit\_handler} logging the attempt to the Audit Logs table.
+\end{itemize}
+
+\textbf{Fixed Code (\texttt{app/auth/\_\_init\_\_.py}):}
+\begin{lstlisting}[language=Python]
+@router.post("/login", response_model=TokenResponse)
+@limiter.limit(settings.SLOWAPI_AUTH_LIMIT, key_func=get_account_targeted_key)
+@limiter.limit(settings.SLOWAPI_IP_LIMIT, key_func=get_proxy_aware_ip_key) 
+def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == body.email).first()
+    
+    if settings.ENABLE_DB_LOCKOUT and user and bool(user.locked):
+        # Database lockout shield executed blocking the database fetch validation
+        raise HTTPException(status_code=429, detail="Account temporarily locked due to too many failed attempts")
+\end{lstlisting}
+
+\subsubsection*{4.3.5 Retest}
+
+We executed the \texttt{KALI\_triple\_shield\_demo.sh} script which tests all three shields with verbose output. First we triggered the rate limit for the first shield, where we made 5 attempts with our real IP and a single email. The second shield was met when we made 20 attempts with our real IP but random IP addresses. The third shield was activated when we spoofed our IP and targeted a single email, adn this was the case where we temporarily locked the account. This output can be seen in \textit{Figure 9}.
+
+We feel the need to note that this system is not perfect, because it does not handle large scale flood attacks (many IP's together with random emails). That type of attack could be stopped via Captchas inside the frontend, which does not meet the project's objectives.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/figure9.png}
+    \caption{Terminal output of the \texttt{KALI\_triple\_shield\_demo.sh} script which triggers every shield one by one, with verbose output for each one.}
+\end{figure}
+
+\vspace{1em}
+\hrule
+\vspace{1em}
+
+\subsection*{4.4 User Enumeration}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Attribute} & \textbf{Value} \\ \hline
+OWASP Category & A07:2021 - Identification and Authentication Failures \\ \hline
+CWE Code & CWE-203: Observable Discrepancy \\ \hline
+Severity Level & MEDIUM \\ \hline
+Estimated CVSS Score & 5.3 \\ \hline
+\end{tabular}
+\end{table}
+
+\subsubsection*{4.4.1 Description}
+
+User enumeration represents the vulnerability where an attacker can find out if a specific email address exists within the application's backend. The initial vulnerable implementation returned distinct HTTP message bodies: revealing ``User already exists'' during \texttt{/register}, or ``Invalid password'' vs. ``User not found'' during \texttt{/login}. This information can be used by attackers to farm valid target lists before doing more precise brute-force or social engineering attacks.
+
+\subsubsection*{4.4.2 Attack Demonstration (PoC)}
+
+The execution of \texttt{KALI\_user\_enumeration.sh} outputs the exact discrepancies in server reponses. We once again used the tool \texttt{ffuf} (as seen in \texttt{KALI\_user\_enumeration\_ffuf.sh}) to feed a list of generic emails (\texttt{users.txt}) to the \texttt{/register} endpoint to see which emails exists as registered in the application's backend.
+
+The server gave different responses for existing emails versus non-existing emails, showing the exact database contents. The timing attack verification output is shown as fixed because in the vulnerable version of the app we use MD5 hashing which is almost instant. This additional timing attack check is relevant for backends which use computational-heavy hashings like \texttt{bcrypt} which we used in the fixed version of the app. The exact outputs were shown by the PoC scripts in \textit{Figure 10}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/figure10.png}
+    \caption{Terminal output of the \texttt{KALI\_user\_enumeration\_ffuf.sh} script showing us what accounts are registered in the database from the \texttt{users.txt} list. We also have the output of the \texttt{KALI\_user\_enumeration.sh} that shows the exact HTTP responses the \texttt{/register} endpoint returns.}
+\end{figure}
+
+\subsubsection*{4.4.3 Impact Analysis}
+
+By farming a list of confirmed existing users, an attacker reduces the brute-force targets. If the application is used by high-level targets, this list can be transitioned into targeted spear-phishing campaigns.
+
+\subsubsection*{4.4.4 Remediation (Fix Implementation)}
+
+The \texttt{/register} API endpoint returned different status codes exposing existence, while the \texttt{/login} API endpoint explicitly returned invalid user and wrong password logic states.
+
+\textbf{Vulnerable Code (\texttt{app/auth/\_\_init\_\_.py}):}
+\begin{lstlisting}[language=Python]
+# During registration
+existing = db.query(User).filter(User.email == body.email).first()
+if existing:
+    raise HTTPException(status_code=400, detail="There is already an account with this email")
+# During login
+if not user:
+    raise HTTPException(status_code=401, detail="User not found")
+if stored_hash != md5(body.password.encode()).hexdigest():
+    raise HTTPException(status_code=401, detail="Wrong password")
+\end{lstlisting}
+
+The API controllers in \texttt{app/auth/\_\_init\_\_.py} were made to return completely generic responses.
+\begin{itemize}
+    \item \textbf{Registration:} Whether an email exists or not, the endpoint identically generates \texttt{\{"message": "If the data is valid, a verification email will be sent to you shortly."\}} to mask duplicate records.
+    \item \textbf{Login:} Standardly throws HTTP 401 \texttt{\{"detail": "Invalid credentials"\}}. 
+    \item \textbf{Timing Attack Mitigation:} If a queried user is strictly evaluated as \texttt{None}, the backend forcibly invokes \texttt{password\_context.dummy\_verify()}. Because standard passwords consume ~1s calculating bcrypt hashes, the application simulates generating a bcrypt hash for an empty user, simulating the response timing to prevent timing enumeration attacks.
+\end{itemize}
+
+\textbf{Fixed Code (\texttt{app/auth/\_\_init\_\_.py}):}
+\begin{lstlisting}[language=Python]
+password_is_valid = False
+if user:
+    try:
+        password_is_valid = password_context.verify(body.password, stored_hash)
+    except Exception:
+        password_is_valid = False
+else:
+    # Simulating bcrypt hashing time for a non-existent user
+    password_context.dummy_verify()
+    
+if not user or not password_is_valid:
+    raise HTTPException(status_code=401, detail="Invalid credentials")
+\end{lstlisting}
+
+\subsubsection*{4.4.5 Retest}
+
+We executed the previous scripts (\texttt{KALI\_user\_enumeration.sh} and \texttt{KALI\_user\_enumeration\_ffuf.sh}) against the fixed version of the API and results showed that we get only uniform HTTP attributes (status code, body length and response time), even if the user existed or not. Furthermore, we showed that timing attacks were mitigated, even when paired with a computational heavy hashing algorithm like \texttt{bcrypt}. The output of these scripts can be seen in \textit{Figure 11}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/figure11.png}
+    \caption{Terminal showing identical server responses for both a valid user email and a non-existent email.}
+\end{figure}
+
+\vspace{1em}
+\hrule
+\vspace{1em}
+
+\subsection*{4.5 Insecure Session Management (Token Reuse \& Rotation)}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Attribute} & \textbf{Value} \\ \hline
+OWASP Category & A07:2021 - Identification and Authentication Failures \\ \hline
+CWE Code & CWE-384: Session Fixation \\ \hline
+Severity Level & HIGH \\ \hline
+Estimated CVSS Score & 8.1 \\ \hline
+\end{tabular}
+\end{table}
+
+\subsubsection*{4.5.1 Description}
+
+The initial MVP used JSON Web Tokens for maintaining sessions but did not take into account the token lifecycle management. Tokens had an expiration time of 1 week, did not have any invalidation upon explicit logout, and reused obvious identifies. Therefore, a hijacked token remained usable indefinitely until its expiration. This falls under the umbrella of (OWASP A01:2021-Broken Access Control / Session Management).
+
+\subsubsection*{4.5.2 Attack Demonstration (PoC)}
+
+We used the \texttt{KALI\_login\_logout\_use\_token.sh} script to showcase the following scenario: a user logged in, received a JWT, and then immediately issued a \texttt{/logout} request. Even if the user logged out via the API, a later request made with the captured token bypassed authorization, granting full access to the user's account and internal endpoints until the tokens expiration.
+
+Furthermore, the \texttt{KALI\_rotation\_test.sh} followed the scenario of a user logging in 2 separate devices, trying the token from the first device that sould have been invalidated, but that was not the case. All outputs of these attacks can be seen in \textit{Figure 12}.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/figure12.png}
+    \caption{Terminal showing a successful login, a successful logout, and a severely successful fetch of data utilizing the ``supposedly'' invalidated token, followed by a rotation test that shows the old tokens are not invalidated after a new device log-in.}
+\end{figure}
+
+\subsubsection*{4.5.3 Impact Analysis}
+
+If an attacker manages to get hold of a legitimate user's JWT (for example via Cross-Site Scripting (XSS) or network sniffing on an insecure connection), then the attacker has complete access to the user's account until the token's expiration. The legitimate user has zero remedy to this because clicking ''Logout'' does not practically invalidate any tokens.
+
+\subsubsection*{4.5.4 Remediation (Fix Implementation)}
+
+The vulnerable version of the app did not institute any mechanism mapping the JWT to database events, making tokens that had no limits during their long lifetime(1 entire week). The \texttt{/logout} route did not do anything apart from returning a fake success message.
+
+\textbf{Vulnerable Code (\texttt{app/auth/\_\_init\_\_.py}):}
+\begin{lstlisting}[language=Python]
+# The token's payload consisted solely of the string sub IDs.
+payload = {
+    "sub": str(user.id),
+    "email": user.email,
+    "role": user.role.value,
+    "exp": datetime.now(timezone.utc) + timedelta(hours=settings.ACCESS_TOKEN_EXPIRE_HOURS),
+}
+# The logout endpoint literally just emitted an auditing log and 200 OK.
+@router.post("/logout")
+def logout(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return {"message": "Log out successful"}
+\end{lstlisting}
+
+JWTs are made to be stateless, making server-side invalidation difficult without introducing patterns like Redis blacklisting. To get as close as possible to the previously mentioned soltuion, and make use only of the relational DB arhitecture, the \texttt{User} schema was updated to include a \texttt{token\_version} tracking integer parameter.
+
+In \texttt{app/auth/\_\_init\_\_.py}:
+\begin{enumerate}
+    \item Every distinct \texttt{/login} increments \texttt{user.token\_version}.
+    \item The \texttt{/logout} explicitly mutates the DB state \texttt{setattr(current\_user, "token\_version", current\_user.token\_version + 1)}. Therefore, all active global tokens for this user are instantly invalidated.
+    \item On every internally protected route (handled by \texttt{dependencies.py} via \texttt{get\_current\_user}), the application dynamically cross-references \texttt{jwt\_token["token\_version"] == user.token\_version}. 
+\end{enumerate}
+
+\textbf{Fixed Code (\texttt{app/auth/\_\_init\_\_.py}):}
+\begin{lstlisting}[language=Python]
+@router.post("/logout")
+def logout(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Immediately invalidate current session globally via database incrementation 
+    setattr(current_user, "token_version", current_user.token_version + 1)
+    db.commit()
+    return {"message": "Log out successful"}
+\end{lstlisting}
+
+Furthermore, adjusting \texttt{ACCESS\_TOKEN\_EXPIRE\_HOURS=24} is a better interval for a JWT lifetime.
+
+\subsubsection*{4.5.5 Retest}
+
+Executing \texttt{KALI\_login\_logout\_use\_token.sh} and \texttt{KALI\_rotation\_test.sh} now results in an HTTP 401 Unauthorized the immediate moment the old token is utilized post-rotation or post-logout. The output of the scripts can be seen in \textit{Figure 13}.
+
+
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/figure13.png}
+    \caption{Post-fix terminal execution demonstrating the immediate rejection (HTTP 401) of the old token after a \texttt{/logout} event.}
+\end{figure}
+
+\vspace{1em}
+\hrule
+\vspace{1em}
+
+\subsection*{4.6 Predictable Reset Token}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Attribute} & \textbf{Value} \\ \hline
+OWASP Category & A01:2021 - Broken Access Control \\ \hline
+CWE Code & CWE-330: Use of Insufficiently Random Values \\ \hline
+Severity Level & CRITICAL \\ \hline
+Estimated CVSS Score & 9.1 \\ \hline
+\end{tabular}
+\end{table}
+
+\subsubsection*{4.6.1 Description}
+
+The ''Forgot Password'' endpoint constitues an important part of the authentication flow. The MVP version of the app generated reset tokens by simply calculatin an MD5 hash of the user's email address. This means the reset token is static, very predictable and even lacks an expiration, an attacker being able to abuse and generate tokens for each existing account.
+
+We will note that for simplicity in testing, neither the MVP nor the fixed version of the app have any emailing services, so the reset token is directly returned when requesting the \texttt{/forgot-password} endpoint. This is intentional as creating email services to send the reset token is not the objective of this project.
+
+\subsubsection*{4.6.2 Attack Demonstration (PoC)}
+
+We used the \texttt{KALI\_predict\_reset\_token.sh} script, where an attacker simply MD5 hashes the email of the target. This bypasses the need to acces the target's email inbox, and the attacker can dynamically piece together the valid password reset URL, requesting the \texttt{/reset-password} endpoint and changing the victim's password.
+
+\texttt{KALI\_double\_use\_token.sh} proves that even after a normal password reset, an attacker who intercepted the URL can reuse it to flip the password indefinitely.
+
+The outputs of these two scripts can be seen in \textit{Figure 14}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/figure14.png}
+    \caption{Terminal showin the offline generation of the target's MD5 reset token and the successful HTTP 200 OK password overwrite against the target account.}
+\end{figure}
+
+\subsubsection*{4.6.3 Impact Analysis}
+
+Anyone knowing the email address of any account can manufacture a reset password token, representing a total account takeover vulnerability.
+
+\subsubsection*{4.6.4 Remediation (Fix Implementation)}
+
+The reason for this extreme vulnerability is how the \texttt{/forgot-password} endpoint generated its core ``secrets''.
+
+\textbf{Vulnerable Code (\texttt{app/auth/\_\_init\_\_.py}):}
+\begin{lstlisting}[language=Python]
+# During the forgot password route, zero randomness was included.
+token = md5(body.email.encode()).hexdigest()
+
+reset_token = PasswordResetToken(user_id=user.id, token=token)
+db.add(reset_token)
+\end{lstlisting}
+
+The remediation changed the entirely deterministic schema, making the generated token object track a temporary duration logic (\texttt{used}, \texttt{expires\_at}).
+
+In \texttt{app/auth/\_\_init\_\_.py}:
+\begin{itemize}
+    \item Introduced \texttt{secrets.token\_urlsafe()} explicitly enforcing a cryptographically-secure random string factory instead of deterministic email hashing.
+    \item The DB object sets a token lifetime of 60 minutes (\texttt{datetime.now(timezone.utc) + timedelta(minutes=60)}).
+    \item The \texttt{/reset-password} endpoint checks all temporal parameters and marks the token as used, preventing multi-use replay.
+\end{itemize}
+
+\textbf{Fixed Code (\texttt{app/auth/\_\_init\_\_.py}):}
+\begin{lstlisting}[language=Python]
+from secrets import token_urlsafe
+
+token = token_urlsafe(64) # Truly cryptographically secure 64-char string
+expires_at = datetime.now(timezone.utc) + timedelta(minutes=60)
+
+reset_token = PasswordResetToken(user_id=user.id, token=token, expires_at=expires_at)
+db.add(reset_token)
+
+# Inside the resetting route
+if reset_token.expires_at < datetime.now(timezone.utc):
+    raise HTTPException(status_code=400, detail="Token expired")
+if reset_token.used:
+    raise HTTPException(status_code=400, detail="Token has already been used")
+
+setattr(reset_token, "used", True) # Effectively destroys its utility
+\end{lstlisting}
+
+\subsubsection*{4.6.5 Retest}
+
+Using \texttt{KALI\_predict\_reset\_token.sh} fails since the token is no longer an MD5 of the email. Using \texttt{KALI\_double\_use\_token.sh} on legitimate tokens fails upon the second attempt, returning a ``Invalid token'' error. Output of these scripts can be seen in \textit{Figure 15}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/figure15.png}
+    \caption{Terminal output of the predicting token script that shows the tokens are now random, and the output of the double-use script proving that the server safely blocks consecutive reset attempts that use the same token.}
+\end{figure}
+
+\vspace{1em}
+\hrule
+\vspace{1em}
+
+\section*{5. Bonus and Advanced Security}
+
+Going forward after securing the OWASP authentication flaws, the application was secured against logical access control bugs, and a complete DevSecOps pipeline was created to secure its future lifecycle.
+
+\subsection*{5.1 Insecure Direct Object References (IDOR) \& Privilege Escalation (RBAC)}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Attribute} & \textbf{Value} \\ \hline
+OWASP Category & A01:2021 - Broken Access Control \\ \hline
+CWE Code & CWE-284: Improper Access Control \\ \hline
+Severity Level & CRITICAL \\ \hline
+Estimated CVSS Score & 9.1 \\ \hline
+\end{tabular}
+\end{table}
+
+\subsubsection*{Technical Details \& Remediation}
+
+The original MVP blindly trusted the user's input for targeted \texttt{ticket\_id} values querying the database without verifying if the query shouldz be done for the requesting user and ticket.
+
+\textbf{Vulnerable Code (\texttt{app/tickets/\_\_init\_\_.py}):}
+\begin{lstlisting}[language=Python]
+# Retrieving / updating tickets solely searched for the raw ticket ID via `get`
+@router.get("/{ticket_id}", response_model=TicketOut)
+def get_ticket(ticket_id: int, request: Request, db: Session = Depends(get_db)):
+    ticket = db.get(Ticket, ticket_id) # Zero ownership constraints!
+\end{lstlisting}
+
+\begin{itemize}
+    \item \textbf{IDOR Remediation (\texttt{app/tickets/\_\_init\_\_.py}):} Endpoints altering \texttt{/tickets\allowbreak/\{ticket\_id\}} abandoned standard ORM \texttt{.get()} and implemented a filtering based on the user ID that was making the request (\texttt{.filter(Ticket.owner\_id == current\_user.id)}), and if the ticket should not be shown for that specific user, we return 404 exclusion.
+\end{itemize}
+
+\textbf{Fixed IDOR Code:}
+\begin{lstlisting}[language=Python]
+@router.get("/{ticket_id}", response_model=TicketOut)
+def get_ticket(ticket_id: int, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id, Ticket.owner_id == current_user.id).first()
+\end{lstlisting}
+
+\begin{itemize}
+    \item \textbf{RBAC Remediation:} We enforced access checks by extracting user roles mapped in \texttt{UserRole} and natively threw authorization rejections against ticket manipulation attempts if the role is not that of a \texttt{MANAGER}.
+\end{itemize}
+
+\textbf{Fixed RBAC Code (\texttt{app/tickets/\_\_init\_\_.py}):}
+\begin{lstlisting}[language=Python]
+update_data = body.model_dump(exclude_unset=True)
+
+if bool("status" in update_data and current_user.role != UserRole.MANAGER):
+    # Automatically throws HTTP 403 matching unauthorized state transitions
+    raise HTTPException(status_code=403, detail="Not authorized to change ticket status")
+\end{lstlisting}
+
+\subsubsection*{Attack Demonstration \& Retest}
+
+The terminal scripts \texttt{KALI\_idor\_tickets.sh} and \texttt{KALI\_analyst\_changes\_ticket\_status.sh} initially successfully read, modified, and modified the states of unauthorized entities, these results being available to be seen in \textit{Figure 16}.
+After implementing the securement, it is clear to see, via \textit{Figure 17} that the previous vulnerabilities are not present anymore, judging by the ''Ticket not found'' and ''Not authorized to change ticket status'' messages.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/figure16.png}
+    \caption{An attacker being able to view a victim's ticket just by guessing the ID in the URL, and an analyst exploiting the RBAC vulnerability to forcibly override a ticket's status from OPEN to RESOLVED.}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/figure17.png}
+    \caption{The attacker is no longer seeing tickets of victims just by guessing the ID in the URL and receiving the correct 404 error message, and the analyst is unable to forcibly override a ticket's status receiving the proper 403 Forbidden, blocking the action.}
+\end{figure}
+
+\subsection*{5.2 DevSecOps: SAST, DAST, and Automated CI/CD}
+
+The security checks from the \texttt{/poc} folder were completely automated via GitHub Actions (\texttt{.github/workflows/security.yml}). The CI/CD pipeline consists of two distinct jobs that support code quality and production readiness:
+
+\begin{enumerate}
+    \item \textbf{SAST Scan (\texttt{bandit}):} A Static Application Security Testing runner automatically pulls the repository upon \texttt{push} or \texttt{pull\_request} against the \texttt{fixed} branch. It invokes \texttt{bandit -r app/ -c "bandit.yml"}. Bandit scans the Python files, ensuring cryptographic assertions, safe environment variables, proper inputs, and preventing basic injection patterns. If vulnerabilities above minimum threshold are discovered, the build fails.
+
+    \item \textbf{DAST \& Continuous Penetration Testing:} The \texttt{automated-security-tests} job spins up the finalized Docker container environment then the CI runner autonomously triggers a comprehensive bash iteration through the \texttt{poc/} folder scripts. To pass the pipeline, all the exit codes of the scripts must be error free to prove that the target application blocked every attack pattern presented in this report. This guarantees that the old errors do not seep in back into the code after a new chage has been made via a commit on the fixed branch.
+\end{enumerate}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/figure18.png}
+    \caption{The executed GitHub Actions workflow showing green checks for both the SAST phase (\texttt{bandit} scanning the Python files) and the DAST phase running the \texttt{KALI\_*} scripts.}
+\end{figure}
+
+\vspace{1em}
+\hrule
+\vspace{1em}
+
+\section*{6. Audit Logging and Traceability}
+
+We created a custom, real-time logging sub-module in \texttt{app/audit/}. This was done to support post-breach forensics by having the needed evidence for an eventual incident response.
+
+The \texttt{AuditLog} SQLAlchemy model is integrated inside every sensitive route from \texttt{app/auth/\_\_init\_\_.py} and \texttt{app/tickets/\_\_init\_\_.py}. For every event, we log asynchronously the following variables: the explicit DB \texttt{user\_id}, the origin \texttt{ip\_address}, and explicit enumeration triggers (\texttt{REGISTER\_FAILED\_EXISTS}, \texttt{UPDATE\_TICKET\_STATUS\_FAILED\_RBAC}, \texttt{LOGIN\_FAILED\_LOCKED}).
+
+We left an example of a usage for the Audit Logs table in \textit{Figure 19}. Here we showed a brute-force attempt for the \texttt{/login} endpoint targeting the user with ID \texttt{1}. We can see subsequent requests with the action \texttt{LOGIN\_FAILED}, and then a single request with the action \texttt{LOGIN}, all from the IP address \texttt{172.19.0.1}, meaning that the attacker succeeded in guessing the user's password.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/figure19.png}
+    \caption{Example of brute-force attack, showing subsequent requests with the action \texttt{LOGIN\_FAILED}, and then a single request with the action \texttt{LOGIN}, all from the IP address \texttt{172.19.0.1}, meaning that the attacker succeeded in guessing the user's password.}
+\end{figure}
+
+\vspace{1em}
+\hrule
+\vspace{1em}
+
+\section*{7. Conclusions}
+
+The ``Break the Login'' project provided a hands-on lookt at how simple coding mistakes, like weak entropy generation, missing rate limiting or blindly trusting user inputs (IDOR) can let attackers compeltely take over accounts in a ''production ready'' MVP application.
+
+Bulding the initial MVP showed that a codebase can run perfectly from a business point of view but still be critically insecure. We took the role of the attacker utilizng common scripts (\texttt{ffuf}, bash) to see how famous flaws documented in the OWASP Top 10 (A01: Broken Access Control, A02: Cryptographic Failures, A07: Identification and Authentication Failures) actually happen in practice.
+
+Remediating all the vulnerabilites found in the first stage made the AuthX app much safer to attacks, and more suitable for confidential data. This has been achieved via the deployment of bcrypt salting, generic server responses for anti-enumeration, short lived JWTs, rate limiting via SlowAPI, and a comprehensive database audit logging. At last, implementing a fully automated DevSecOps pipeline solidifies all these remediations, blocking future code changes to let old attacks be possible again.
+
+Taking in the role of both the attacker and defender proved that modern software development and engineering does not imply only shipping an MVP that could be liked by the clients at first sight, but also to develop something secure, going by a zero-trust mindset. Protecting how user log in and keeping that state secure from attackers represents the foundation of any safe application.
+
+\end{document}
